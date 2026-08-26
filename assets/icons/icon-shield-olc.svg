@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="OrganicLifeCoin shield">
+  <path d="M32 4 10 12v18c0 14 9 24 22 30 13-6 22-16 22-30V12z" fill="#12200c" stroke="#eaf5e0" stroke-width="2"/>
+  <path d="M32 10 15 16v14c0 11 7 19 17 24 10-5 17-13 17-24V16z" fill="#1f3312"/>
+  <path d="M23 25h18v4H23zm0 10h18v4H23z" fill="#eaf5e0"/>
+  <circle cx="32" cy="46" r="5" fill="#487828"/>
+</svg>

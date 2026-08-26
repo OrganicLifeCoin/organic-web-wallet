@@ -1,0 +1,104 @@
+{
+    "main": {
+        "name": "mainnet",
+        "collateralInSats": 400000000000,
+        "isTestnet": false,
+        "TICKER": "OLC",
+        "PUBKEY_PREFIX": [
+            "o"
+        ],
+        "STAKING_PREFIX": "f",
+        "PUBKEY_ADDRESS": [
+            115
+        ],
+        "EXCHANGE_ADDRESS_PREFIX": [
+            2,
+            33,
+            12
+        ],
+        "STAKING_ADDRESS": [
+            95
+        ],
+        "SECRET_KEY": 45,
+        "BIP44_TYPE": 5150,
+        "BIP44_TYPE_LEDGER": 5150,
+        "PROTOCOL_VERSION": 70929,
+        "MASTERNODE_PORT": 43721,
+        "SHIELD_PREFIX": "olc",
+        "Explorers": [
+            {
+                "name": "OrganicLifeCoin Explorer",
+                "url": "/"
+            }
+        ],
+        "Nodes": [
+            {
+                "name": "OrganicLifeCoin RPC Bridge",
+                "url": "/mainnet"
+            }
+        ],
+        "Consensus": {},
+        "coinbaseMaturity": 100,
+        "budgetCycleBlocks": 10080,
+        "proposalFee": 10000000000,
+        "proposalFeeConfirmRequirement": 6,
+        "maxPaymentCycles": 26,
+        "maxPayment": 2777750000000,
+        "defaultColdStakingAddress": "",
+        "stakeSplitTarget": 50000000000,
+        "mnReward": 600000000,
+        "defaultStartingShieldBlock": 1,
+        "minFeePerByte": 1000
+    },
+    "testnet": {
+        "name": "testnet",
+        "collateralInSats": 400000000000,
+        "isTestnet": true,
+        "TICKER": "OLC",
+        "PUBKEY_PREFIX": [
+            "t"
+        ],
+        "STAKING_PREFIX": "x",
+        "PUBKEY_ADDRESS": [
+            127
+        ],
+        "EXCHANGE_ADDRESS_PREFIX": [
+            3,
+            33,
+            12
+        ],
+        "STAKING_ADDRESS": [
+            138
+        ],
+        "SECRET_KEY": 239,
+        "BIP44_TYPE": 1,
+        "BIP44_TYPE_LEDGER": 1,
+        "PROTOCOL_VERSION": 70929,
+        "MASTERNODE_PORT": 49716,
+        "SHIELD_PREFIX": "tolc",
+        "Explorers": [
+            {
+                "name": "OrganicLifeCoin Explorer",
+                "url": "/"
+            }
+        ],
+        "Nodes": [
+            {
+                "name": "OrganicLifeCoin RPC Bridge",
+                "url": "/testnet"
+            }
+        ],
+        "Consensus": {},
+        "coinbaseMaturity": 1,
+        "budgetCycleBlocks": 40320,
+        "proposalFee": 10000000000,
+        "proposalFeeConfirmRequirement": 3,
+        "maxPaymentCycles": 26,
+        "maxPayment": 2777750000000,
+        "defaultColdStakingAddress": "xcD836xKM4eXadMr7ViqbTMktykDq9t9Kg",
+        "stakeSplitTarget": 50000000000,
+        "mnReward": 600000000,
+        "defaultStartingShieldBlock": 1,
+        "minFeePerByte": 1000
+    }
+}

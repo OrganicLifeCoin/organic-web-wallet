@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="OrganicLifeCoin logo">
+  <rect width="96" height="96" rx="20" fill="#12200c"/>
+  <rect x="6" y="6" width="84" height="84" rx="16" fill="none" stroke="#2f5718" stroke-width="3"/>
+  <path d="M18 26h60v8H18zm0 18h60v8H18z" fill="#eaf5e0"/>
+  <text x="48" y="78" text-anchor="middle" font-family="Montserrat, Arial, sans-serif" font-size="18" font-weight="700" fill="#6fa349">OLC</text>
+</svg>

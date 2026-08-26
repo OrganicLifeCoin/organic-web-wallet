@@ -1,0 +1,1223 @@
+<script setup>
+import Login from './Login.vue';
+import WalletBalance from './WalletBalance.vue';
+import WalletButtons from './WalletButtons.vue';
+import Activity from './Activity.vue';
+import GettingStarted from './GettingStarted.vue';
+import GenKeyWarning from './GenKeyWarning.vue';
+import TransferMenu from './TransferMenu.vue';
+import ExportPrivKey from './ExportPrivKey.vue';
+import RestoreWallet from './RestoreWallet.vue';
+import {
+    isExchangeAddress,
+    isShieldAddress,
+    isValidOLCAddress,
+    parseBIP21Request,
+    sanitizeHTML,
+} from '../misc.js';
+import { ALERTS, translation, tr } from '../i18n.js';
+import { HardwareWalletMasterKey, HdMasterKey } from '../masterkey';
+import { COIN, cChainParams } from '../chain_params';
+import { onMounted, ref, watch, computed } from 'vue';
+import { getEventEmitter } from '../event_bus';
+import { Database } from '../database';
+import { start, doms, updateLogOutButton } from '../global';
+import { validateAmount } from '../legacy';
+import { debugError, DebugTopics } from '../debug.js';
+import {
+    confirmPopup,
+    isXPub,
+    isColdAddress,
+    isStandardAddress,
+} from '../misc.js';
+import { getNetwork } from '../network/network_manager.js';
+import { LedgerController } from '../ledger';
+import { guiAddContactPrompt } from '../contacts-book';
+import { scanQRCode } from '../scanner';
+import { useWallets } from '../composables/use_wallet.js';
+import { setWallet, Wallet } from '../wallet.js';
+import { useSettings } from '../composables/use_settings.js';
+import olcMark from '../../assets/olc-mark.svg';
+import olcShieldLogo from '../../assets/icons/icon-shield-olc.svg';
+import pIconCamera from '../../assets/icons/icon-camera.svg';
+import { ParsedSecret } from '../parsed_secret.js';
+import { storeToRefs } from 'pinia';
+import { useAlerts } from '../composables/use_alerts.js';
+import { Vault } from '../vault';
+import { valuesToComputed } from '../utils.js';
+import { PIVXShield } from 'pivx-shield';
+import { isShieldFeatureActive } from '../shield_activation.js';
+const { createAlert } = useAlerts();
+
+const wallets = useWallets();
+const { activeWallet, activeVault } = storeToRefs(wallets);
+
+const needsToEncrypt = computed(() => {
+    if (activeWallet.value.isHardwareWallet) {
+        return false;
+    } else {
+        return (
+            (!activeVault.value?.isViewOnly &&
+                !activeVault.value?.isEncrypted) ??
+            false
+        );
+    }
+});
+const showTransferMenu = ref(false);
+const { advancedMode, displayDecimals, autoLockWallet, showLogin } =
+    storeToRefs(useSettings());
+watch(
+    () => wallets.vaults,
+    () => {
+        if (wallets.vaults.length === 0) {
+            showLogin.value = true;
+        } else {
+            showLogin.value = false;
+        }
+    },
+    { immediate: true }
+);
+
+const showExportModal = ref(false);
+const showEncryptModal = ref(false);
+const encryptingWallet = ref(false);
+const pendingWalletSave = ref(false);
+const keyToBackup = ref('');
+const transferAddress = ref('');
+const transferDescription = ref('');
+const transferAmount = ref('');
+const showRestoreWallet = ref(false);
+const restoreWalletReason = ref('');
+const importLock = ref(false);
+const shieldActivationHeight = computed(
+    () => cChainParams.current.defaultStartingShieldBlock
+);
+const currentChainHeight = computed(() => activeWallet.value?.blockCount ?? 0);
+const shieldModeAvailable = computed(() =>
+    isShieldFeatureActive(currentChainHeight.value, shieldActivationHeight.value)
+);
+
+function togglePrivacyMode() {
+    if (!shieldModeAvailable.value) {
+        activeWallet.value.publicMode = true;
+        return;
+    }
+
+    activeWallet.value.publicMode = !activeWallet.value.publicMode;
+}
+
+function getReadableError(error, fallback = ALERTS.INTERNAL_ERROR) {
+    if (typeof error === 'string' && error.trim().length > 0) return error;
+    if (error instanceof Error && error.message?.trim()) return error.message;
+    if (
+        error &&
+        typeof error === 'object' &&
+        typeof error.message === 'string' &&
+        error.message.trim().length > 0
+    ) {
+        return error.message;
+    }
+    return fallback;
+}
+
+watch(showExportModal, async (showExportModal) => {
+    if (showExportModal) {
+        keyToBackup.value = await activeWallet.value.getKeyToBackup();
+    } else {
+        // Wipe key to backup, just in case
+        keyToBackup.value = '';
+    }
+});
+
+/**
+ * Import a wallet, this function MUST be called only at start or when switching network
+ * @param {Object} o - Options
+ * @param {'legacy'|'hd'|'hardware'} o.type - type of import
+ * @param {string} o.secret
+ * @param {string} [o.password]
+ */
+async function importWallet({
+    type,
+    secret,
+    password = '',
+    label,
+}) {
+    try {
+        /**
+         * @type{ParsedSecret?}
+         */
+        let parsedSecret;
+        if (type === 'hardware') {
+            if (!navigator.usb) {
+                createAlert(
+                    'warning',
+                    ALERTS.WALLET_HARDWARE_USB_UNSUPPORTED,
+                    7500
+                );
+                return false;
+            }
+            try {
+                parsedSecret = new ParsedSecret(
+                    secret
+                        ? HardwareWalletMasterKey.fromXPub(secret)
+                        : await HardwareWalletMasterKey.create()
+                );
+            } catch (e) {
+                // The user has already been notified in `ledger.js`
+                debugError(DebugTopics.LEDGER, e);
+                return;
+            }
+
+            createAlert(
+                'info',
+                tr(ALERTS.WALLET_HARDWARE_WALLET, [
+                    {
+                        hardwareWallet:
+                            LedgerController.getInstance().getHardwareName(),
+                    },
+                ]),
+                12500
+            );
+        } else {
+            try {
+                parsedSecret = await ParsedSecret.parse(
+                    secret,
+                    password,
+                    advancedMode.value
+                );
+            } catch (e) {
+                createAlert('warning', getReadableError(e), 8000);
+            }
+        }
+        if (parsedSecret) {
+            showLogin.value = false;
+            const vault = await wallets.addVault(
+                new Vault({
+                    masterKey: parsedSecret.masterKey,
+                    shield: parsedSecret.shield,
+                    seed: parsedSecret.seed,
+                    label: label?.trim(),
+                }),
+                parsedSecret.masterKey.getKeyToExport(0).substring(0, 8)
+            );
+
+            if (needsToEncrypt.value) {
+                pendingWalletSave.value = true;
+                showEncryptModal.value = true;
+            }
+            if (vault.isHardware.value) {
+                await vault.save({ isHardware: true });
+            }
+
+            // Start syncing in the background
+            activeWallet.value.sync().then(() => {
+                createAlert('success', translation.syncStatusFinished, 12500);
+            });
+            getEventEmitter().emit('wallet-import');
+            return true;
+        }
+
+        return false;
+    } finally {
+        importLock.value = false;
+    }
+}
+
+/**
+ * Encrypt wallet (actually vault)
+ * @param {string} password - Password to encrypt wallet with
+ * @param {string} [currentPassword] - Current password with which the wallet is encrypted with, if any
+ */
+async function encryptWallet(password, currentPassword = '') {
+    if (encryptingWallet.value) return false;
+    encryptingWallet.value = true;
+    try {
+        if (activeVault.value.isEncrypted) {
+            if (
+                !(await activeVault.value.checkDecryptPassword(currentPassword))
+            ) {
+                createAlert('warning', ALERTS.INCORRECT_PASSWORD, 6000);
+                return false;
+            }
+        }
+        const res = await activeVault.value.encrypt(password);
+        if (!res) return false;
+
+        createAlert('success', ALERTS.NEW_PASSWORD_SUCCESS, 5500);
+        doms.domChangePasswordContainer.classList.remove('d-none');
+        pendingWalletSave.value = false;
+        showEncryptModal.value = false;
+        return true;
+    } catch (e) {
+        createAlert('warning', getReadableError(e), 8000);
+        return false;
+    } finally {
+        encryptingWallet.value = false;
+    }
+}
+
+/**
+ * The wallet is only persisted to the browser after it is encrypted
+ * (the password is needed to unlock it after a refresh). Until then,
+ * closing the modal would silently lose the wallet, so warn and reopen.
+ */
+function onEncryptModalClose() {
+    showEncryptModal.value = false;
+    // Defer the check so a save triggered by the submit button can finish first
+    setTimeout(() => {
+        if (pendingWalletSave.value && needsToEncrypt.value) {
+            createAlert('warning', translation.walletNotSavedWarning, 7000);
+            showEncryptModal.value = true;
+        }
+    }, 800);
+}
+
+async function restoreWallet(strReason) {
+    if (!activeVault.value.isEncrypted) return false;
+    if (activeWallet.value.isHardwareWallet) return true;
+    showRestoreWallet.value = true;
+    return await new Promise((res) => {
+        watch(
+            [showRestoreWallet, isViewOnly],
+            () => {
+                showRestoreWallet.value = false;
+                res(!isViewOnly.value);
+            },
+            { once: true }
+        );
+    });
+}
+
+/**
+ * Lock the wallet by deleting masterkey private data, after user confirmation
+ */
+async function displayLockWalletModal() {
+    const isEncrypted = activeVault.value.isEncrypted;
+    const title = isEncrypted
+        ? translation.popupWalletLock
+        : translation.popupWalletWipe;
+    const html =
+        '<div class="modalContents"><span class="topText">' +
+        (isEncrypted
+            ? translation.popupWalletLockNote
+            : translation.popupWalletWipeNote) +
+        '</span></div>';
+    if (
+        await confirmPopup({
+            title,
+            html,
+        })
+    ) {
+        lockWallet();
+    }
+}
+
+/**
+ * Lock the wallet by deleting masterkey private data
+ */
+function lockWallet() {
+    activeVault.value.wipePrivateData();
+    createAlert('success', ALERTS.WALLET_LOCKED, 1500);
+}
+
+/**
+ * Sends a transaction
+ * @param {string} address - Address or contact to send to
+ * @param {number} amount - Amount of PIVs to send
+ */
+async function send(address, amount, useShieldInputs, memo) {
+    // Ensure a wallet is unlocked
+    if (activeVault.value.isViewOnly && !activeWallet.value.isHardwareWallet) {
+        if (
+            !(await restoreWallet(
+                tr(ALERTS.WALLET_UNLOCK_IMPORT, [
+                    {
+                        unlock: activeVault.value.isEncrypted
+                            ? 'unlock '
+                            : 'import/create',
+                    },
+                ])
+            ))
+        )
+            return;
+    }
+
+    // Ensure wallet is synced
+    if (!activeWallet.value.isSynced) {
+        return createAlert('warning', `${ALERTS.WALLET_NOT_SYNCED}`, 3000);
+    }
+
+    // Make sure we are not already creating a (shield) tx
+    if (activeWallet.value.isCreatingTransaction()) {
+        return createAlert(
+            'warning',
+            'Already creating a transaction! please wait for it to finish'
+        );
+    }
+
+    // Sanity check the receiver
+    address = address.trim();
+
+    // Check for any contacts that match the input
+    const cDB = await Database.getInstance();
+    const cAccount = await cDB.getAccount(activeWallet.value.getKeyToExport());
+
+    // If we have an Account, then check our Contacts for anything matching too
+    const cContact = cAccount?.getContactBy({
+        name: address,
+        pubkey: address,
+    });
+    // If a Contact were found, we use it's Pubkey
+    if (cContact) address = cContact.pubkey;
+
+    // Make sure wallet has shield enabled
+    if (!activeWallet.value.hasShield) {
+        if (useShieldInputs || isShieldAddress(address)) {
+            return createAlert('warning', ALERTS.MISSING_SHIELD);
+        }
+    }
+
+    // If this is an XPub, we'll fetch their last used 'index', and derive a new public key for enhanced privacy
+    if (isXPub(address)) {
+        const cNet = getNetwork();
+        if (!cNet.enabled)
+            return createAlert(
+                'warning',
+                ALERTS.WALLET_OFFLINE_AUTOMATIC,
+                3500
+            );
+
+        // Fetch the XPub info
+        const cXPub = await cNet.getXPubInfo(address);
+
+        // Use the latest index plus one (or if the XPub is unused, then the second address)
+        const nIndex = (cXPub.usedTokens || 0) + 1;
+
+        // Create a receiver master-key
+        const cReceiverWallet = new HdMasterKey({ xpub: address });
+        const strPath = cReceiverWallet.getDerivationPath(0, 0, nIndex);
+
+        // Set the 'receiver address' as the unused XPub-derived address
+        address = cReceiverWallet.getAddress(strPath);
+    }
+
+    // If Staking address: redirect to staking page
+    if (isColdAddress(address)) {
+        createAlert('warning', ALERTS.STAKE_NOT_SEND, 7500);
+        // Close the current Send Popup
+        showTransferMenu.value = false;
+        // Open the Staking Dashboard
+        // TODO: when write stake page rewrite this as an event
+        return doms.domStakeTab.click();
+    }
+
+    // Check if the Receiver Address is a valid P2PKH address
+    // or shield address
+    if (!isValidOLCAddress(address))
+        return createAlert(
+            'warning',
+            tr(ALERTS.INVALID_ADDRESS, [{ address }]),
+            2500
+        );
+    if (isColdAddress(address)) {
+        return createAlert(
+            'warning',
+            tr(ALERTS.INVALID_ADDRESS, [{ address }]),
+            2500
+        );
+    }
+    if (isExchangeAddress(address) && useShieldInputs) {
+        return createAlert('warning', translation.cantShieldToExc, 2500);
+    }
+
+    // Sanity check the amount
+    const nValue = Math.round(amount * COIN);
+    if (!validateAmount(nValue)) return;
+    const availableBalance = useShieldInputs
+        ? activeWallet.value.shieldBalance
+        : activeWallet.value.balance;
+    if (nValue > availableBalance) {
+        createAlert(
+            'warning',
+            tr(ALERTS.MISSING_FUNDS, [{ sats: nValue - availableBalance }])
+        );
+        return;
+    }
+    // Close the send screen and clear inputs
+    showTransferMenu.value = false;
+    transferAddress.value = '';
+    transferDescription.value = '';
+    transferAmount.value = '';
+
+    // Create and send the TX
+    try {
+        await activeWallet.value.createAndSendTransaction(
+            getNetwork(),
+            address,
+            nValue,
+            {
+                useShieldInputs,
+                memo,
+            }
+        );
+    } catch (e) {
+        console.error(e);
+        createAlert('warning', getReadableError(e), 8000);
+    } finally {
+        if (autoLockWallet.value) {
+            if (activeVault.value.isEncrypted) {
+                lockWallet();
+            } else {
+                await displayLockWalletModal();
+            }
+        }
+    }
+}
+
+/**
+ * @param {boolean} useShieldInputs - whether max balance is from shield or transparent pivs
+ */
+function getMaxBalance(useShieldInputs) {
+    const coinSatoshi = useShieldInputs
+        ? activeWallet.value.shieldBalance
+        : activeWallet.value.balance;
+    transferAmount.value = coinSatoshi / COIN;
+}
+
+async function importFromDatabase() {
+    try {
+        const database = await Database.getInstance();
+        const vaults = await database.getVaults();
+        for (const vault of vaults) {
+            try {
+                const ws = [];
+                let i = 0;
+                for (const wallet of vault.wallets) {
+                    const account = await database.getAccount(wallet);
+                    const p = await ParsedSecret.parse(account.publicKey);
+                    const masterKey = vault.isHardware
+                        ? HardwareWalletMasterKey.fromXPub(account.publicKey)
+                        : p.masterKey;
+                    let shield = null;
+                    if (account.shieldData) {
+                        try {
+                            const { pivxShield, success } =
+                                await PIVXShield.load(account.shieldData);
+                            if (!success)
+                                createAlert(
+                                    'warning',
+                                    'Failed to load shield!',
+                                    3000
+                                );
+                            shield = pivxShield;
+                        } catch (e) {
+                            // Corrupted shield backup: load the wallet without
+                            // shield rather than losing the whole wallet.
+                            shield = null;
+                        }
+                    }
+                    ws.push(new Wallet({ nAccount: i++, masterKey, shield }));
+                }
+                const v = new Vault({
+                    wallets: ws,
+                    label: vault.label,
+                });
+
+                await wallets.addVault(v);
+
+                getEventEmitter().emit('reset-activity');
+                updateLogOutButton();
+            } catch (e) {
+                // A single broken wallet must not hide the others
+                console.error(e);
+                createAlert(
+                    'warning',
+                    `Failed to load one of your wallets: ${e.message}`,
+                    7000
+                );
+            }
+        }
+        getEventEmitter().emit('wallet-import');
+    } catch (e) {
+        console.error(e);
+    }
+    if (wallets.vaults.length === 0) {
+        showLogin.value = true;
+    } else {
+        showLogin.value = false;
+    }
+}
+
+getEventEmitter().on('toggle-network', async () => {
+    importFromDatabase();
+    // TODO: When tab component is written, simply emit an event
+    doms.domDashboard.click();
+});
+
+onMounted(async () => {
+    await start();
+    await importFromDatabase();
+
+    if (activeVault.value?.isEncrypted) {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('addcontact')) {
+            await handleContactRequest(urlParams);
+        } else if (urlParams.has('pay')) {
+            transferAddress.value = urlParams.get('pay') ?? '';
+            transferDescription.value = urlParams.get('desc') ?? '';
+            transferAmount.value = parseFloat(urlParams.get('amount')) || '';
+            showTransferMenu.value = true;
+        }
+
+        // Remove any URL 'commands' after running, so that they don't re-run if a user refreshes
+        window.history.replaceState(
+            {},
+            document.title,
+            window.location.pathname
+        );
+    }
+    updateLogOutButton();
+});
+
+const {
+    balance,
+    shieldBalance,
+    pendingShieldBalance,
+    immatureBalance,
+    immatureColdBalance,
+    currency,
+    price,
+    isViewOnly,
+    hasShield,
+    publicMode,
+} = valuesToComputed(activeWallet);
+
+function changePassword() {
+    showEncryptModal.value = true;
+}
+
+async function openSendQRScanner() {
+    const cScan = await scanQRCode();
+    if (cScan) {
+        const { data } = cScan;
+        if (!data) return;
+        if (isStandardAddress(data) || isShieldAddress(data)) {
+            transferAddress.value = data;
+            showTransferMenu.value = true;
+            return;
+        }
+        const cBIP21Req = parseBIP21Request(data);
+        if (cBIP21Req) {
+            transferAddress.value = cBIP21Req.address;
+            transferDescription.value = cBIP21Req.options?.label ?? '';
+            transferAmount.value = cBIP21Req.options?.amount ?? 0;
+            showTransferMenu.value = true;
+            return;
+        }
+        if (data.includes('addcontact=')) {
+            const strParams = data.substring(data.indexOf('addcontact='));
+            const urlParams = new URLSearchParams(strParams);
+            await handleContactRequest(urlParams);
+            return;
+        }
+        createAlert(
+            'warning',
+            `"${sanitizeHTML(
+                cScan?.data?.substring(
+                    0,
+                    Math.min(cScan?.data?.length, 6) ?? ''
+                )
+            )}…" ${ALERTS.QR_SCANNER_BAD_RECEIVER}`,
+            7500
+        );
+    }
+    34;
+}
+
+async function handleContactRequest(urlParams) {
+    const strURI = urlParams.get('addcontact');
+    if (strURI.includes(':')) {
+        // Split 'name' and 'pubkey'
+        let [name, pubKey] = strURI.split(':');
+        // Convert name from hex to utf-8
+        name = Buffer.from(name, 'hex').toString('utf8');
+        await guiAddContactPrompt(sanitizeHTML(name), sanitizeHTML(pubKey));
+    }
+}
+
+defineExpose({
+    restoreWallet,
+    changePassword,
+});
+</script>
+
+<template>
+    <div id="keypair" class="tabcontent">
+        <div class="row m-0">
+            <Login
+                v-show="showLogin"
+                :advancedMode="advancedMode"
+                :has-wallet="wallets.vaults.length > 0"
+                v-model:importLock="importLock"
+                @import-wallet="importWallet"
+            />
+
+            <div v-show="!showLogin">
+                <br />
+
+                <!-- Switch to Public/Private -->
+                <div
+                    class="col-12 p-0"
+                    v-show="activeWallet.isImported && hasShield"
+                >
+                    <center>
+                        <div
+                            :class="{
+                                'dcWallet-warningMessage-dark':
+                                    activeWallet.publicMode,
+                                'dcWallet-warningMessage-disabled':
+                                    !shieldModeAvailable,
+                            }"
+                            class="dcWallet-warningMessage"
+                            id="warningMessage"
+                            data-testid="shieldModeToggle"
+                            @click="togglePrivacyMode"
+                        >
+                            <div class="messLogo">
+                                <span
+                                    class="buttoni-icon publicSwitchIcon"
+                                    v-html="
+                                        activeWallet.publicMode
+                                            ? olcMark
+                                            : olcShieldLogo
+                                    "
+                                >
+                                </span>
+                            </div>
+                            <div class="messMessage" id="publicPrivateText">
+                                <span class="messTop">
+                                    {{
+                                        tr(translation.currentMode, [
+                                            {
+                                                mode: activeWallet.publicMode
+                                                    ? translation.publicMode
+                                                    : translation.privateMode,
+                                            },
+                                        ])
+                                    }}
+                                </span>
+                                <span class="messBot">
+                                    {{
+                                        shieldModeAvailable
+                                            ? tr(translation.switchTo, [
+                                                  {
+                                                      mode: activeWallet
+                                                          .publicMode
+                                                          ? translation.privateMode
+                                                          : translation.publicMode,
+                                                  },
+                                              ])
+                                            : tr(
+                                                  translation.shieldModeUnlocksAt,
+                                                  [
+                                                      {
+                                                          height: shieldActivationHeight,
+                                                      },
+                                                  ]
+                                              )
+                                    }}
+                                </span>
+                                <span
+                                    class="messFoot"
+                                    v-if="!shieldModeAvailable"
+                                    data-testid="shieldActivationNotice"
+                                >
+                                    {{
+                                        tr(
+                                            translation.shieldModeCurrentHeight,
+                                            [
+                                                {
+                                                    current: currentChainHeight,
+                                                },
+                                            ]
+                                        )
+                                    }}
+                                </span>
+                            </div>
+                        </div>
+                    </center>
+                </div>
+
+                <!-- Redeem Code (OrganicLifeCoin Promos) -->
+                <div
+                    class="modal"
+                    id="redeemCodeModal"
+                    tabindex="-1"
+                    role="dialog"
+                    aria-hidden="true"
+                    data-backdrop="static"
+                    data-keyboard="false"
+                >
+                    <div
+                        class="modal-dialog modal-dialog-centered max-w-600"
+                        role="document"
+                    >
+                        <div class="modal-content exportKeysModalColor">
+                            <div
+                                style="
+                                    position: relative;
+                                    top: -54px;
+                                    left: -1px;
+                                "
+                            >
+                                <ul class="settingsMenu redeemMenu">
+                                    <li
+                                        data-i18n="redeem"
+                                        style="width: 50%; text-align: center"
+                                        onclick="OLCWallet.setPromoMode(true)"
+                                        id="redeemCodeModeRedeem"
+                                        class="active"
+                                    >
+                                        Redeem
+                                    </li>
+                                    <li
+                                        data-i18n="create"
+                                        style="width: 50%; text-align: center"
+                                        onclick="OLCWallet.setPromoMode(false)"
+                                        id="redeemCodeModeCreate"
+                                    >
+                                        Create
+                                    </li>
+                                </ul>
+                            </div>
+                            <div
+                                class="modal-header"
+                                id="redeemCodeModalHeader"
+                                style="margin-top: -40px"
+                            >
+                                <h3
+                                    class="modal-title"
+                                    id="redeemCodeModalTitle"
+                                    style="
+                                        text-align: center;
+                                        width: 100%;
+                                        color: #EB1B24;
+                                        margin-top: 0px;
+                                    "
+                                >
+                                    Redeem Code
+                                </h3>
+                            </div>
+                            <div
+                                class="modal-body center-text"
+                                style="padding-top: 0px; padding-bottom: 24px"
+                            >
+                                <center>
+                                    <p
+                                        style="
+                                            color: #b9bfd4;
+                                            font-size: 15px;
+                                            width: 250px;
+                                            font-family: Montserrat !important;
+                                        "
+                                    >
+                                        OrganicLifeCoin Promos
+                                        {{ translation.pivxPromos }}
+                                    </p>
+                                    <div id="redeemCodeUse">
+                                        <div id="redeemCodeInputBox">
+                                            <input
+                                                class="btn-input mono center-text"
+                                                type="text"
+                                                id="redeemCodeInput"
+                                                :placeholder="
+                                                    translation.redeemInput
+                                                "
+                                                style="text-align: left"
+                                                autocomplete="nope"
+                                            />
+                                        </div>
+                                        <center>
+                                            <div
+                                                id="redeemCodeGiftIconBox"
+                                                style="display: none"
+                                            >
+                                                <br />
+                                                <br />
+                                                <i
+                                                    id="redeemCodeGiftIcon"
+                                                    onclick="OLCWallet.sweepPromoCode();"
+                                                    class="fa-solid fa-gift fa-2xl"
+                                                    style="
+                                                        color: #9aa2c8;
+                                                        font-size: 4em;
+                                                    "
+                                                ></i>
+                                            </div>
+
+                                            <div
+                                                id="redeemCodeResults"
+                                                style="opacity: 75%"
+                                            ></div>
+
+                                            <div
+                                                id="redeemCodeDiv"
+                                                style="
+                                                    margin-top: 50px;
+                                                    display: none;
+                                                    font-size: 15px;
+                                                    background-color: rgb(
+                                                        58,
+                                                        12,
+                                                        96
+                                                    );
+                                                    border: 1px solid
+                                                        rgb(159, 0, 249);
+                                                    padding: 8px 15px 10px;
+                                                    border-radius: 10px;
+                                                    color: rgb(211, 190, 229);
+                                                    width: 310px;
+                                                    text-align: left;
+                                                "
+                                            >
+                                                <div
+                                                    style="
+                                                        width: 48px;
+                                                        height: 38px;
+                                                        background-color: rgb(
+                                                            49,
+                                                            11,
+                                                            81
+                                                        );
+                                                        margin-right: 9px;
+                                                        border-radius: 9px;
+                                                        display: flex;
+                                                        justify-content: center;
+                                                        align-items: center;
+                                                        font-size: 20px;
+                                                    "
+                                                >
+                                                    <i
+                                                        class="fas fa-spinner spinningLoading"
+                                                    ></i>
+                                                </div>
+                                                <div style="width: 100%">
+                                                    <div id="redeemCodeETA">
+                                                        Calculating...
+                                                    </div>
+                                                    <div
+                                                        div=""
+                                                        class="progress"
+                                                        style="
+                                                            max-width: 310px;
+                                                            border: 1px solid
+                                                                rgb(
+                                                                    147,
+                                                                    46,
+                                                                    205
+                                                                );
+                                                            border-radius: 4px;
+                                                            background-color: rgb(
+                                                                43,
+                                                                0,
+                                                                58
+                                                            );
+                                                        "
+                                                    >
+                                                        <div
+                                                            class="progress-bar progress-bar-striped progress-bar-animated"
+                                                            role="progressbar"
+                                                            id="redeemCodeProgress"
+                                                            aria-valuenow="42"
+                                                            aria-valuemin="0"
+                                                            aria-valuemax="100"
+                                                            style="
+                                                                width: 42% !important;
+                                                            "
+                                                        ></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <progress
+                                                min="0"
+                                                max="100"
+                                                value="50"
+                                                style="display: none"
+                                            ></progress>
+                                        </center>
+                                    </div>
+                                    <div
+                                        id="redeemCodeCreate"
+                                        style="display: none"
+                                    >
+                                        <input
+                                            class="btn-input mono center-text"
+                                            style="
+                                                border-top-right-radius: 9px;
+                                                border-bottom-right-radius: 9px;
+                                            "
+                                            type="text"
+                                            id="redeemCodeCreateInput"
+                                            :placeholder="
+                                                translation.createName
+                                            "
+                                            autocomplete="nope"
+                                        />
+                                        <input
+                                            class="btn-input mono center-text"
+                                            id="redeemCodeCreateAmountInput"
+                                            style="
+                                                border-top-right-radius: 9px;
+                                                border-bottom-right-radius: 9px;
+                                            "
+                                            type="text"
+                                            :placeholder="
+                                                translation.createAmount
+                                            "
+                                            autocomplete="nope"
+                                        />
+                                        <div
+                                            class="table-promo d-none"
+                                            id="promo-table"
+                                        >
+                                            <br />
+                                            <table
+                                                class="table table-responsive table-sm stakingTx table-mobile-scroll"
+                                            >
+                                                <thead style="border: 0px">
+                                                    <tr>
+                                                        <td
+                                                            style="
+                                                                width: 100px;
+                                                                border-top: 0px;
+                                                                border-bottom: 1px
+                                                                    solid
+                                                                    #3f4e89;
+                                                            "
+                                                            class="text-center"
+                                                        >
+                                                            <b> Promo Code </b>
+                                                        </td>
+                                                        <td
+                                                            style="
+                                                                width: 100px;
+                                                                border-top: 0px;
+                                                                border-bottom: 1px
+                                                                    solid
+                                                                    #3f4e89;
+                                                            "
+                                                            class="text-center"
+                                                        >
+                                                            <b>
+                                                                {{
+                                                                    cChainParams
+                                                                        .current
+                                                                        .TICKER
+                                                                }}
+                                                            </b>
+                                                        </td>
+                                                        <td
+                                                            style="
+                                                                border-top: 0px;
+                                                                border-bottom: 1px
+                                                                    solid
+                                                                    #3f4e89;
+                                                            "
+                                                            class="text-center"
+                                                        >
+                                                            <i
+                                                                onclick="OLCWallet.promosToCSV()"
+                                                                class="fa-solid fa-lg fa-file-csv ptr"
+                                                            ></i>
+                                                        </td>
+                                                    </tr>
+                                                </thead>
+                                                <tbody
+                                                    id="redeemCodeCreatePendingList"
+                                                    style="
+                                                        text-align: center;
+                                                        vertical-align: middle;
+                                                    "
+                                                ></tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </center>
+                            </div>
+                            <div
+                                class="modal-footer"
+                                id="redeemCodeModalButtons"
+                            >
+                                <div id="redeemCameraBtn">
+                                    <button
+                                        class="olc-button-small-cancel"
+                                        style="
+                                            float: left;
+                                            height: 49px;
+                                            width: 49px;
+                                            padding-left: 12px;
+                                        "
+                                        onclick="OLCWallet.openPromoQRScanner()"
+                                    >
+                                        <span
+                                            class="buttoni-text cameraIcon"
+                                            v-html="pIconCamera"
+                                        >
+                                        </span>
+                                    </button>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onclick="OLCWallet.promoConfirm()"
+                                    id="redeemCodeModalConfirmButton"
+                                    class="olc-button-big"
+                                    style="float: right"
+                                >
+                                    Redeem
+                                </button>
+
+                                <button
+                                    type="button"
+                                    class="olc-button-big-cancel"
+                                    id="redeemCodeModalConfirmButton"
+                                    style="float: right"
+                                    data-dismiss="modal"
+                                    aria-label="Close"
+                                >
+                                    {{ translation.popupClose }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- // Redeem Code (OrganicLifeCoin Promos) -->
+
+                <!-- Contacts Modal -->
+                <div
+                    class="modal"
+                    id="contactsModal"
+                    tabindex="-1"
+                    role="dialog"
+                    aria-hidden="true"
+                    data-backdrop="static"
+                    data-keyboard="false"
+                >
+                    <div
+                        class="modal-dialog modal-dialog-centered max-w-450"
+                        role="document"
+                    >
+                        <div class="modal-content exportKeysModalColor">
+                            <div class="modal-header" id="contactsModalHeader">
+                                <h3
+                                    class="modal-title"
+                                    id="contactsModalTitle"
+                                    style="
+                                        text-align: center;
+                                        width: 100%;
+                                        color: #7f91d6;
+                                    "
+                                >
+                                    {{ translation.contacts }}
+                                </h3>
+                            </div>
+                            <div class="modal-body px-0">
+                                <div
+                                    id="contactsList"
+                                    class="contactsList"
+                                ></div>
+                            </div>
+                            <div
+                                class="modal-footer"
+                                style="
+                                    display: flex;
+                                    justify-content: center;
+                                    padding-top: 0px;
+                                "
+                            >
+                                <button
+                                    type="button"
+                                    class="olc-button-big-cancel"
+                                    aria-label="Close"
+                                    data-dismiss="modal"
+                                    data-i18n="popupClose"
+                                >
+                                    {{ translation.popupClose }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- // Contacts Modal -->
+                <ExportPrivKey
+                    :show="showExportModal"
+                    :privateKey="keyToBackup"
+                    :isJSON="hasShield && !activeVault?.isEncrypted"
+                    @close="showExportModal = false"
+                />
+                <!-- WALLET FEATURES -->
+                <div v-if="activeWallet.isImported">
+                    <GenKeyWarning
+                        @onEncrypt="encryptWallet"
+                        @close="onEncryptModalClose()"
+                        @open="showEncryptModal = true"
+                        :showModal="showEncryptModal"
+                        :showBox="needsToEncrypt"
+                        :isEncrypt="activeVault?.isEncrypted ?? false"
+                        :isSaving="encryptingWallet"
+                    />
+                    <div class="row p-0">
+                        <!-- Balance in OrganicLifeCoin & USD-->
+                        <WalletBalance
+                            :balance="balance"
+                            :shieldBalance="shieldBalance"
+                            :pendingShieldBalance="pendingShieldBalance"
+                            :immatureBalance="immatureBalance"
+                            :immatureColdBalance="immatureColdBalance"
+                            :isHdWallet="activeWallet.isHD"
+                            :isViewOnly="activeWallet.isViewOnly"
+                            :isEncrypted="activeVault?.isEncrypted ?? false"
+                            :isImported="activeWallet.isImported"
+                            :needsToEncrypt="needsToEncrypt"
+                            @displayLockWalletModal="displayLockWalletModal()"
+                            @restoreWallet="restoreWallet()"
+                            :isHardwareWallet="activeWallet.isHardwareWallet"
+                            :currency="currency"
+                            :price="price"
+                            :displayDecimals="displayDecimals"
+                            :shieldEnabled="hasShield"
+                            @send="showTransferMenu = true"
+                            @exportPrivKeyOpen="showExportModal = true"
+                            :publicMode="publicMode"
+                            class="col-12 p-0 mb-2"
+                        />
+                        <WalletButtons class="col-12 p-0 md-5" />
+                        <Activity title="Activity" :rewards="false" />
+                    </div>
+                    <!-- Getting started instructions, below the wallet section -->
+                    <GettingStarted />
+                </div>
+            </div>
+            <TransferMenu
+                :show="showTransferMenu"
+                :publicMode="publicMode"
+                :price="price"
+                :currency="currency"
+                v-model:amount="transferAmount"
+                :desc="transferDescription"
+                v-model:address="transferAddress"
+                @openQrScan="openSendQRScanner()"
+                @close="showTransferMenu = false"
+                @send="send"
+                @max-balance="getMaxBalance"
+            />
+        </div>
+    </div>
+    <RestoreWallet
+        :show="showRestoreWallet"
+        :reason="restoreWalletReason"
+        :wallet="activeWallet"
+        @close="showRestoreWallet = false"
+    />
+</template>

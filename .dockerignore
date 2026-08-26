@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.DS_Store
+.localstorage.json
+coverage
+dist
+node_modules
+cypress/fixtures/e2e
+cypress/screenshots
+cypress/snapshots
+*.log
+.env
+.env.*
+!.env.example
