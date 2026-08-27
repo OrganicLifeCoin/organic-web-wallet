@@ -4,9 +4,9 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 dockerfile="$repo_root/Dockerfile"
 
-postinstall_line=$(rg -n '^COPY .*postinstall\.cjs .*\./$' "$dockerfile" | cut -d: -f1)
-chain_params_line=$(rg -n '^COPY .*chain_params\.prod\.json .*\./$' "$dockerfile" | cut -d: -f1)
-npm_ci_line=$(rg -n '^RUN npm ci$' "$dockerfile" | cut -d: -f1)
+postinstall_line=$(awk '/^COPY .*postinstall\.cjs .*\.\/$/ { print NR; exit }' "$dockerfile")
+chain_params_line=$(awk '/^COPY .*chain_params\.prod\.json .*\.\/$/ { print NR; exit }' "$dockerfile")
+npm_ci_line=$(awk '/^RUN npm ci$/ { print NR; exit }' "$dockerfile")
 
 if [[ -z "$postinstall_line" || -z "$chain_params_line" || -z "$npm_ci_line" \
     || "$postinstall_line" -ge "$npm_ci_line" || "$chain_params_line" -ge "$npm_ci_line" ]]; then
