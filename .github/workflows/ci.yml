@@ -28,6 +28,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check the wallet image dependency order
+        run: tests/dockerfile.test.sh
+
       - name: Run OLC regression checks
         run: npm run test:olc
 
