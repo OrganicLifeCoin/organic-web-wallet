@@ -1602,7 +1602,10 @@ onBeforeUnmount(() => {
             <div class="pqPanelHeader">
                 <h4 class="pqTopConfigured">{{ translation.pqSetupTitle }}</h4>
             </div>
-            <p v-if="setupMode === 'choices'" class="pqInfo pqSetupIntro">
+            <p
+                v-if="setupMode === 'choices'"
+                class="pqInfo pqSetupIntro center-text"
+            >
                 {{ translation.pqSetupIntro }}
             </p>
 
@@ -2468,11 +2471,10 @@ onBeforeUnmount(() => {
     border-color: #c58b2b;
 }
 
-.pqSetupIntro {
+.pqInfo.pqSetupIntro {
     text-align: center;
     max-width: 640px;
-    margin-right: auto;
-    margin-left: auto;
+    margin: 8px auto 16px;
 }
 
 .pqSetupChoices {

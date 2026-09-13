@@ -97,6 +97,15 @@ describe('PQWallet UI', () => {
         );
     });
 
+    it('centers the setup guidance within the wallet panel', async () => {
+        const view = mountWallet();
+        await waitFor(async () =>
+            view.text().includes('Choose how you want to start')
+        );
+
+        expect(view.get('.pqSetupIntro').classes()).toContain('center-text');
+    });
+
     it('shows and copies a 24-word phrase before creating a 10-key wallet', async () => {
         const view = mountWallet();
         await waitFor(async () =>
