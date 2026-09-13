@@ -34,6 +34,7 @@ const OPERATOR_PUBLIC_KEY_PATTERN = /^[0-9a-f]{2624}$/;
 const MASTERNODE_STATUSES = new Set(['draft', 'registered', 'withdrawn']);
 const MAX_KEYS = 100;
 const MAX_ENCRYPTED_SECRET_LENGTH = 512;
+const DATABASE_OPEN_TIMEOUT_MS = 2000;
 const DATABASE_BLOCKED_MESSAGE =
     'Close other OrganicLifeCoin wallet tabs, then reload this page';
 
@@ -44,9 +45,14 @@ let receiveCursor = 0;
 function getDatabase() {
     if (!dbPromise) {
         let rejectBlocked;
+        let blockedTimer;
         let upgradeWasBlocked = false;
         const blockedPromise = new Promise((_, reject) => {
             rejectBlocked = reject;
+            blockedTimer = setTimeout(() => {
+                upgradeWasBlocked = true;
+                reject(new Error(DATABASE_BLOCKED_MESSAGE));
+            }, DATABASE_OPEN_TIMEOUT_MS);
         });
         const openPromise = openDB(PQ_WALLET_DB_NAME, PQ_WALLET_DB_VERSION, {
             upgrade(database) {
@@ -62,6 +68,7 @@ function getDatabase() {
             },
             blocked() {
                 upgradeWasBlocked = true;
+                clearTimeout(blockedTimer);
                 rejectBlocked(new Error(DATABASE_BLOCKED_MESSAGE));
             },
             blocking(_currentVersion, _blockedVersion, event) {
@@ -72,11 +79,15 @@ function getDatabase() {
                 dbPromise = null;
             },
         });
-        openPromise
-            .then((database) => {
+        openPromise.then(
+            (database) => {
+                clearTimeout(blockedTimer);
                 if (upgradeWasBlocked) database.close();
-            })
-            .catch(() => {});
+            },
+            () => {
+                clearTimeout(blockedTimer);
+            }
+        );
         const currentPromise = Promise.race([openPromise, blockedPromise]);
         dbPromise = currentPromise;
         currentPromise.catch(() => {

@@ -43,6 +43,29 @@ describe('PQ wallet database lifecycle', () => {
         olderConnection.close();
     });
 
+    it('reports when its open request is queued behind another blocked upgrade', async () => {
+        const olderConnection = await openDB(DATABASE_NAME, 1, {
+            upgrade(database) {
+                database.createObjectStore('wallet', { keyPath: 'id' });
+                database.createObjectStore('keys', { keyPath: 'id' });
+            },
+        });
+        const queuedUpgrade = indexedDB.open(DATABASE_NAME, 2);
+        await new Promise((resolve) => {
+            queuedUpgrade.onblocked = resolve;
+        });
+        const { isInitialized } = await import(
+            '../../scripts/pqwallet/pqwallet-store.js'
+        );
+
+        await expect(
+            Promise.race([isInitialized(), timeoutAfter(2500)])
+        ).rejects.toThrow(BLOCKED_MESSAGE);
+
+        queuedUpgrade.onsuccess = () => queuedUpgrade.result.close();
+        olderConnection.close();
+    });
+
     it('releases its connection when a newer wallet version needs to open', async () => {
         const { isInitialized, PQ_WALLET_DB_VERSION } = await import(
             '../../scripts/pqwallet/pqwallet-store.js'
