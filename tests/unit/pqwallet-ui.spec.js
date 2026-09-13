@@ -145,7 +145,38 @@ describe('PQWallet UI', () => {
         expect(isUnlocked()).toBe(true);
         expect(await getAddresses()).toHaveLength(10);
         expect(view.text()).toContain('Go to Backup');
+        expect(view.find('[data-testid="pq-created-mnemonic"]').exists()).toBe(
+            false
+        );
     }, 20000);
+
+    it('clears a generated phrase when returning to the password step', async () => {
+        const view = mountWallet();
+        await waitFor(async () =>
+            view.text().includes('Set up your PQ wallet')
+        );
+        await view.get('[data-testid="pq-create-choice"]').trigger('click');
+        const passwordInputs = view.findAll('input[type="password"]');
+        await passwordInputs[0].setValue(PASSWORD);
+        await passwordInputs[1].setValue(PASSWORD);
+        await view.get('[data-testid="pq-create-continue"]').trigger('click');
+        await waitFor(() => view.findAll('.pqRecoveryWord').length === 24);
+
+        const phrase = view
+            .findAll('.pqRecoveryWord strong')
+            .map((word) => word.text())
+            .join(' ');
+        const backButton = view
+            .findAll('button')
+            .find((button) => button.text() === 'Back');
+        await backButton.trigger('click');
+
+        expect(view.text()).not.toContain(phrase);
+        expect(view.find('[data-testid="pq-created-mnemonic"]').exists()).toBe(
+            false
+        );
+        expect(await isInitialized()).toBe(false);
+    });
 
     it('restores a backup, unlocks the store and reaches the unlocked view', async () => {
         await createLockedWallet();
