@@ -86,7 +86,7 @@ export default {
         new HtmlWebpackPlugin({
             template: './index.template.html',
             filename: 'index.html',
-            favicon: './assets/favicon.ico',
+            favicon: './assets/icons/organic-life-icon-192.png',
             hash: true,
             meta: {
                 viewport:
@@ -96,11 +96,7 @@ export default {
         new VueLoaderPlugin(),
         new MiniCssExtractPlugin(),
         new CopyPlugin({
-            patterns: [
-                { from: 'manifest.json' },
-                { from: 'assets/icons' },
-                { from: 'assets/logo_opaque-dark-bg.png' },
-            ],
+            patterns: [{ from: 'manifest.json' }, { from: 'assets/icons' }],
         }),
     ],
 };

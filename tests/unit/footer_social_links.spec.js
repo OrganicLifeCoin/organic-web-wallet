@@ -3,7 +3,10 @@ import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
 const indexTemplatePath = resolve(process.cwd(), 'index.template.html');
-const ogLogoPath = resolve(process.cwd(), 'assets/logo_opaque-dark-bg.png');
+const ogLogoPath = resolve(
+    process.cwd(),
+    'assets/icons/organic-life-icon-192.png'
+);
 
 describe('footer links', () => {
     it('includes the organiclife.coin link and no legacy 1776 links', () => {
@@ -18,7 +21,7 @@ describe('footer links', () => {
 
     it('references the OrganicLifeCoin logo asset', () => {
         const html = readFileSync(indexTemplatePath, 'utf8');
-        expect(html).toContain('/logo_opaque-dark-bg.png');
+        expect(html).toContain('/organic-life-icon-192.png');
         expect(existsSync(ogLogoPath)).toBe(true);
     });
 });

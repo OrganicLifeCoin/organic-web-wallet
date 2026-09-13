@@ -5820,20 +5820,20 @@ textarea::placeholder {
     --brand-blue: #1b2d12;
     --brand-ice: #dedee0;
 
-    --theme-bg: #f4f4f2;
-    --theme-bg-grad: radial-gradient(1200px 700px at 75% -25%, #d7e2cc 0%, transparent 56%),
-        linear-gradient(155deg, #f6f6f3, #ecf1e6 60%, #e6ecde);
-    --theme-surface: #ffffff;
-    --theme-surface-2: #f0f4ea;
-    --theme-border: #c4d3b8;
-    --theme-text: #182a11;
-    --theme-text-muted: #5a6f3b;
-    --theme-accent: #3a6a1f;
-    --theme-accent-2: #4a7f28;
-    --theme-overlay: #f4f4f2e6;
-    --theme-button-bg: #2b4820;
-    --theme-button-bg-2: #233d17;
-    --theme-button-border: #4b6f2f;
+    --theme-bg: #e7f1df;
+    --theme-bg-grad: radial-gradient(1200px 700px at 75% -25%, #b8d7a7 0%, transparent 56%),
+        linear-gradient(155deg, #f1f8ed, #dcebd4 60%, #cee2c3);
+    --theme-surface: #f8fcf5;
+    --theme-surface-2: #deedd6;
+    --theme-border: #a8c99a;
+    --theme-text: #183512;
+    --theme-text-muted: #4c6b3f;
+    --theme-accent: #2f6f24;
+    --theme-accent-2: #4f8f37;
+    --theme-overlay: #e7f1dfe8;
+    --theme-button-bg: #285f1f;
+    --theme-button-bg-2: #214f1b;
+    --theme-button-border: #4f813c;
     --theme-button-text: #f5f9f2;
     --theme-danger-bg: #fbe7e9;
     --theme-danger-text: #7c1f28;
@@ -5864,20 +5864,20 @@ textarea::placeholder {
 }
 
 body.theme-light {
-    --theme-bg: #f4f4f2;
-    --theme-bg-grad: radial-gradient(1200px 700px at 75% -25%, #d7e2cc 0%, transparent 56%),
-        linear-gradient(155deg, #f6f6f3, #ecf1e6 60%, #e6ecde);
-    --theme-surface: #ffffff;
-    --theme-surface-2: #f0f4ea;
-    --theme-border: #c4d3b8;
-    --theme-text: #182a11;
-    --theme-text-muted: #5a6f3b;
-    --theme-accent: #3a6a1f;
-    --theme-accent-2: #4a7f28;
-    --theme-overlay: #f4f4f2e6;
-    --theme-button-bg: #2b4820;
-    --theme-button-bg-2: #233d17;
-    --theme-button-border: #4b6f2f;
+    --theme-bg: #e7f1df;
+    --theme-bg-grad: radial-gradient(1200px 700px at 75% -25%, #b8d7a7 0%, transparent 56%),
+        linear-gradient(155deg, #f1f8ed, #dcebd4 60%, #cee2c3);
+    --theme-surface: #f8fcf5;
+    --theme-surface-2: #deedd6;
+    --theme-border: #a8c99a;
+    --theme-text: #183512;
+    --theme-text-muted: #4c6b3f;
+    --theme-accent: #2f6f24;
+    --theme-accent-2: #4f8f37;
+    --theme-overlay: #e7f1dfe8;
+    --theme-button-bg: #285f1f;
+    --theme-button-bg-2: #214f1b;
+    --theme-button-border: #4f813c;
     --theme-button-text: #f5f9f2;
     --theme-danger-bg: #fbe7e9;
     --theme-danger-text: #7c1f28;
@@ -6905,6 +6905,7 @@ body.theme-light .governanceRoot .treasuryOverview__fiatCode {
 
 /* Top nav refresh: tighter bar + modern tab pills */
 .navbarSpecial {
+    top: 0 !important;
     min-height: 62px !important;
     padding-top: 6px !important;
     padding-bottom: 6px !important;
