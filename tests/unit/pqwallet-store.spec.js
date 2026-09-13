@@ -13,6 +13,7 @@ import {
     deleteWallet,
     isInitialized,
     isUnlocked,
+    getRecoveryMnemonic,
     withDecryptedSeed,
     createMasternodeRecord,
     listMasternodeRecords,
@@ -31,6 +32,8 @@ const PASSWORD = 'correct horse battery staple';
 const OTHER_PASSWORD = 'another good password';
 const NETWORK = 'testnet';
 const COUNT = 2;
+const RECOVERY_PHRASE =
+    'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art';
 
 // Record every keypair derivation so tests can observe that seeds and derived
 // secret keys are zero-filled after the store is done with them.
@@ -88,6 +91,63 @@ describe('pqwallet-store', () => {
             const { publicKey } = pqKeypairFromSeed(seed);
             expect(addressFromPublicKey(publicKey, NETWORK)).toBe(address);
         }
+    });
+
+    it('restores the same addresses from one recovery phrase', async () => {
+        const created = await createWallet({
+            password: PASSWORD,
+            network: NETWORK,
+            count: COUNT,
+            mnemonic: RECOVERY_PHRASE,
+        });
+        expect(created.mnemonic).toBe(RECOVERY_PHRASE);
+        await deleteWallet(PASSWORD);
+
+        const restored = await createWallet({
+            password: PASSWORD,
+            network: NETWORK,
+            count: COUNT,
+            mnemonic: `  ${RECOVERY_PHRASE.replaceAll(' ', '  \n ')}  `,
+        });
+
+        expect(restored.mnemonic).toBe(RECOVERY_PHRASE);
+        expect(restored.addresses).toEqual(created.addresses);
+    });
+
+    it('encrypts the recovery phrase and reveals it only with the password', async () => {
+        await createWallet({
+            password: PASSWORD,
+            network: NETWORK,
+            count: COUNT,
+            mnemonic: RECOVERY_PHRASE,
+        });
+        const database = await openDB(PQ_WALLET_DB_NAME, PQ_WALLET_DB_VERSION);
+        const meta = await database.get('wallet', 1);
+        database.close();
+
+        expect(meta.encryptedMnemonic).toEqual(expect.any(String));
+        expect(meta.encryptedMnemonic).not.toContain('abandon');
+        expect(JSON.stringify(meta)).not.toContain(RECOVERY_PHRASE);
+        await expect(getRecoveryMnemonic(OTHER_PASSWORD)).rejects.toThrow(
+            'Invalid password'
+        );
+        await expect(getRecoveryMnemonic(PASSWORD)).resolves.toBe(
+            RECOVERY_PHRASE
+        );
+    });
+
+    it('rejects an invalid recovery phrase without creating a wallet', async () => {
+        const invalid = RECOVERY_PHRASE.replace(/ art$/, 'abandon');
+
+        await expect(
+            createWallet({
+                password: PASSWORD,
+                network: NETWORK,
+                count: COUNT,
+                mnemonic: invalid,
+            })
+        ).rejects.toThrow('Invalid PQ wallet recovery phrase');
+        expect(await isInitialized()).toBe(false);
     });
 
     it('enforces the shared minimum password length', async () => {
@@ -185,7 +245,7 @@ describe('pqwallet-store', () => {
     });
 
     it('round-trips an encrypted backup through export and import', async () => {
-        const { addresses } = await createWallet({
+        const { addresses, mnemonic } = await createWallet({
             password: PASSWORD,
             network: NETWORK,
             count: COUNT,
@@ -194,8 +254,10 @@ describe('pqwallet-store', () => {
         const seeds = addresses.map((address) => getSeed(address).slice());
 
         const backup = await exportBackup();
-        expect(backup.version).toBe(2);
+        expect(backup.version).toBe(3);
         expect(backup.network).toBe(NETWORK);
+        expect(backup.encryptedMnemonic).toEqual(expect.any(String));
+        expect(JSON.stringify(backup)).not.toContain(mnemonic);
         expect(backup.keys).toHaveLength(COUNT);
         expect(backup.keys.map((key) => key.address)).toEqual(addresses);
         for (const key of backup.keys) {
@@ -213,6 +275,7 @@ describe('pqwallet-store', () => {
         const restored = await importBackup(serialized, PASSWORD);
         expect(restored.addresses).toEqual(addresses);
         expect(await isInitialized()).toBe(true);
+        expect(await getRecoveryMnemonic(PASSWORD)).toBe(mnemonic);
         await unlockWallet(PASSWORD);
         expect(await getAddresses()).toEqual(addresses);
         for (let i = 0; i < addresses.length; i += 1) {
@@ -220,6 +283,27 @@ describe('pqwallet-store', () => {
                 bytesToHex(seeds[i])
             );
         }
+    });
+
+    it('keeps version-2 encrypted JSON backups compatible', async () => {
+        const { addresses } = await createWallet({
+            password: PASSWORD,
+            network: NETWORK,
+            count: COUNT,
+            mnemonic: RECOVERY_PHRASE,
+        });
+        const currentBackup = await exportBackup();
+        const legacyBackup = { ...currentBackup, version: 2 };
+        delete legacyBackup.encryptedMnemonic;
+        await deleteWallet(PASSWORD);
+
+        await expect(importBackup(legacyBackup, PASSWORD)).resolves.toEqual({
+            network: NETWORK,
+            addresses,
+        });
+        await expect(getRecoveryMnemonic(PASSWORD)).rejects.toThrow(
+            'PQ wallet recovery phrase is unavailable; use the encrypted JSON backup'
+        );
     });
 
     it('persists encrypted masternode ownership and operator recovery in backups', async () => {

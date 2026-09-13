@@ -1,20 +1,25 @@
 // Non-custodial encrypted PQ seed store.
 //
 // IndexedDB database `olc-pq-wallet`, version 2:
-//   wallet: { id: 1, network, createdAt, verifier }
+//   wallet: { id: 1, network, createdAt, verifier, encryptedMnemonic? }
 //   keys:   { id, address, label, encryptedSeed, createdAt }
 //   masternodes: browser-owned controller metadata plus encrypted operator seed
 //
-// The verifier is the constant below encrypted with the wallet password; the
-// seeds are hex strings encrypted with the same password through the shared
-// AES-GCM helper. Decrypted seeds live only in memory and are zero-filled on
-// lock, on lock-time errors and after every import verification. Nothing in
-// this module logs its inputs.
+// The verifier, optional mnemonic and seeds are encrypted with the wallet
+// password through the shared AES-GCM helper. Decrypted seeds live only in
+// memory and are zero-filled on lock, on lock-time errors and after every
+// import verification. Nothing in this module logs its inputs.
 import { openDB } from 'idb';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import { encrypt, decrypt } from '../aes-gcm.js';
 import { MIN_PASS_LENGTH } from '../chain_params.js';
 import { PQ_SEED_SIZE, pqKeypairFromSeed } from './mldsa.js';
+import {
+    derivePQSeed,
+    generatePQMnemonic,
+    normalizePQMnemonic,
+    validatePQMnemonic,
+} from './pqmnemonic.js';
 import {
     PQ_DOMAINS,
     addressFromPublicKey,
@@ -24,7 +29,7 @@ import {
 
 export const PQ_WALLET_DB_NAME = 'olc-pq-wallet';
 export const PQ_WALLET_DB_VERSION = 2;
-export const PQ_WALLET_BACKUP_VERSION = 2;
+export const PQ_WALLET_BACKUP_VERSION = 3;
 export const PQ_WALLET_META_ID = 1;
 
 const VERIFIER_PLAINTEXT = 'olc-pq-wallet-verifier-v1';
@@ -251,16 +256,28 @@ export async function withDecryptedSeed(encryptedSeed, password, callback) {
 
 /**
  * Create a new encrypted PQ wallet with `count` fresh seeds.
- * @param {{password: string, network: string, count?: number}} request
- * @returns {Promise<{network: string, addresses: string[]}>}
+ * @param {{password: string, network: string, count?: number, mnemonic?: string}} request
+ * @returns {Promise<{network: string, addresses: string[], mnemonic: string}>}
  */
-export async function createWallet({ password, network, count = 10 } = {}) {
+export async function createWallet({
+    password,
+    network,
+    count = 10,
+    mnemonic,
+} = {}) {
     assertPassword(password);
     assertNetwork(network);
     if (!Number.isInteger(count) || count < 1 || count > MAX_KEYS) {
         throw new Error(
             `PQ wallet key count must be between 1 and ${MAX_KEYS}`
         );
+    }
+    const recoveryMnemonic =
+        mnemonic === undefined
+            ? generatePQMnemonic()
+            : normalizePQMnemonic(mnemonic);
+    if (!validatePQMnemonic(recoveryMnemonic)) {
+        throw new Error('Invalid PQ wallet recovery phrase');
     }
     const database = await getDatabase();
     if (await database.get('wallet', PQ_WALLET_META_ID)) {
@@ -272,10 +289,14 @@ export async function createWallet({ password, network, count = 10 } = {}) {
         password,
         'Failed to encrypt the PQ wallet verifier'
     );
+    const encryptedMnemonic = await encryptOrThrow(
+        recoveryMnemonic,
+        password,
+        'Failed to encrypt the PQ wallet recovery phrase'
+    );
     const records = [];
     for (let index = 0; index < count; index += 1) {
-        const seed = new Uint8Array(PQ_SEED_SIZE);
-        crypto.getRandomValues(seed);
+        const seed = derivePQSeed(recoveryMnemonic, index);
         try {
             const address = addressForSeed(seed, network);
             const encryptedSeed = await encryptOrThrow(
@@ -304,12 +325,17 @@ export async function createWallet({ password, network, count = 10 } = {}) {
         network,
         createdAt,
         verifier,
+        encryptedMnemonic,
     });
     for (const record of records) {
         await transaction.objectStore('keys').put(record);
     }
     await transaction.done;
-    return { network, addresses: records.map((record) => record.address) };
+    return {
+        network,
+        addresses: records.map((record) => record.address),
+        mnemonic: recoveryMnemonic,
+    };
 }
 
 /**
@@ -396,7 +422,36 @@ export function getSeed(address) {
     return seed;
 }
 
-/** @returns {Promise<{version: number, network: string, keys: Array<{address: string, encryptedSeed: string}>}>} */
+export async function getRecoveryMnemonic(password) {
+    assertPassword(password);
+    const database = await getDatabase();
+    const meta = await verifyPassword(database, password);
+    if (!validEncryptedSecret(meta.encryptedMnemonic)) {
+        throw new Error(
+            'PQ wallet recovery phrase is unavailable; use the encrypted JSON backup'
+        );
+    }
+    const mnemonic = normalizePQMnemonic(
+        await decrypt(meta.encryptedMnemonic, password)
+    );
+    if (!validatePQMnemonic(mnemonic)) {
+        throw new Error('Corrupted PQ wallet recovery phrase');
+    }
+    const records = sortedKeys(await database.getAll('keys'));
+    for (let index = 0; index < records.length; index += 1) {
+        const seed = derivePQSeed(mnemonic, index);
+        try {
+            if (addressForSeed(seed, meta.network) !== records[index].address) {
+                throw new Error('Corrupted PQ wallet recovery phrase');
+            }
+        } finally {
+            seed.fill(0);
+        }
+    }
+    return mnemonic;
+}
+
+/** @returns {Promise<{version: number, network: string, encryptedMnemonic?: string, keys: Array<{address: string, encryptedSeed: string}>}>} */
 export async function exportBackup() {
     const database = await getDatabase();
     const meta = await database.get('wallet', PQ_WALLET_META_ID);
@@ -406,6 +461,9 @@ export async function exportBackup() {
     return {
         version: PQ_WALLET_BACKUP_VERSION,
         network: meta.network,
+        ...(validEncryptedSecret(meta.encryptedMnemonic)
+            ? { encryptedMnemonic: meta.encryptedMnemonic }
+            : {}),
         keys: records.map(({ address, encryptedSeed }) => ({
             address,
             encryptedSeed,
@@ -433,7 +491,11 @@ export async function importBackup(backup, password) {
     }
     if (!data || typeof data !== 'object')
         throw new Error('Invalid PQ wallet backup');
-    if (data.version !== 1 && data.version !== PQ_WALLET_BACKUP_VERSION) {
+    if (
+        data.version !== 1 &&
+        data.version !== 2 &&
+        data.version !== PQ_WALLET_BACKUP_VERSION
+    ) {
         throw new Error(
             `Unsupported PQ wallet backup version: ${data.version}`
         );
@@ -453,9 +515,30 @@ export async function importBackup(backup, password) {
         throw new Error('A PQ wallet already exists');
     }
 
+    let encryptedMnemonic = '';
+    let recoveryMnemonic = '';
+    if (data.encryptedMnemonic !== undefined) {
+        if (!validEncryptedSecret(data.encryptedMnemonic)) {
+            throw new Error('Invalid PQ wallet recovery phrase');
+        }
+        const decryptedMnemonic = await decrypt(
+            data.encryptedMnemonic,
+            password
+        );
+        if (!decryptedMnemonic) {
+            throw new Error('Invalid password or corrupted PQ seed');
+        }
+        recoveryMnemonic = normalizePQMnemonic(decryptedMnemonic);
+        if (!validatePQMnemonic(recoveryMnemonic)) {
+            throw new Error('Invalid PQ wallet recovery phrase');
+        }
+        encryptedMnemonic = data.encryptedMnemonic;
+    }
+
     const seen = new Set();
     const entries = [];
-    for (const key of data.keys) {
+    for (let index = 0; index < data.keys.length; index += 1) {
+        const key = data.keys[index];
         if (
             !key ||
             !validEncryptedSecret(key.encryptedSeed) ||
@@ -472,6 +555,18 @@ export async function importBackup(backup, password) {
                 throw new Error(
                     'PQ wallet backup key does not match its address'
                 );
+            }
+            if (recoveryMnemonic) {
+                const derivedSeed = derivePQSeed(recoveryMnemonic, index);
+                try {
+                    if (bytesToHex(derivedSeed) !== bytesToHex(seed)) {
+                        throw new Error(
+                            'PQ wallet recovery phrase does not match its addresses'
+                        );
+                    }
+                } finally {
+                    derivedSeed.fill(0);
+                }
             }
         });
         entries.push({
@@ -516,6 +611,7 @@ export async function importBackup(backup, password) {
         network: data.network,
         createdAt,
         verifier,
+        ...(encryptedMnemonic ? { encryptedMnemonic } : {}),
     });
     for (let index = 0; index < entries.length; index += 1) {
         await transaction.objectStore('keys').put({
