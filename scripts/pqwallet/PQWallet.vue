@@ -16,11 +16,14 @@ import {
 import { createQR, downloadBlob } from './pq-utils.js';
 import { useAlerts } from '../composables/use_alerts.js';
 import { tr, translation } from './pq-i18n.js';
+import newWalletIcon from '../../assets/icons/icon-new-wallet.svg';
+import importIcon from '../../assets/icons/icon-import.svg';
 import {
     createWallet,
     exportBackup,
     getAddresses,
     getNextReceiveAddress,
+    getRecoveryMnemonic,
     getSeed,
     importBackup,
     isInitialized,
@@ -34,6 +37,11 @@ import {
     markMasternodeRegistered,
     withMasternodeOperatorSeed,
 } from './pqwallet-store.js';
+import {
+    generatePQMnemonic,
+    normalizePQMnemonic,
+    validatePQMnemonic,
+} from './pqmnemonic.js';
 import { pqKeypairFromSeed } from './mldsa.js';
 import { PQ_ADDRESS_HRP, isValidPQAddress } from './pqaddress.js';
 import {
@@ -84,9 +92,15 @@ const error = ref('');
 const justCreated = ref(false);
 
 // --- No wallet ---
-const setupMode = ref('create'); // create | restore
+const setupMode = ref('choices'); // choices | create | recovery | restore
+const restoreMode = ref('mnemonic'); // mnemonic | backup
 const createPassword = ref('');
 const createPasswordConfirm = ref('');
+const pendingMnemonic = ref('');
+const mnemonicSaved = ref(false);
+const restoreMnemonic = ref('');
+const restoreMnemonicPassword = ref('');
+const restoreMnemonicPasswordConfirm = ref('');
 const restoreJson = ref('');
 const restorePassword = ref('');
 
@@ -125,6 +139,10 @@ const revealPassword = ref('');
 const revealedSeed = ref('');
 const revealError = ref('');
 let revealTimer = null;
+const recoveryPassword = ref('');
+const revealedMnemonic = ref('');
+const recoveryError = ref('');
+let recoveryTimer = null;
 
 // --- Non-custodial testnet masternodes ---
 const masternodeRecords = ref([]);
@@ -163,20 +181,39 @@ const spendableUtxos = computed(() => utxos.value.filter(
 ));
 const masternodesActive = computed(() => chainHeight.value !== null && chainHeight.value + 1 >= 3000);
 
-const canCreateWallet = computed(
+const canContinueCreate = computed(
     () =>
         !busy.value &&
         createPassword.value.length > 0 &&
         createPasswordConfirm.value.length > 0
 );
-const canRestoreWallet = computed(
+const canFinishCreate = computed(
+    () =>
+        !busy.value &&
+        mnemonicSaved.value &&
+        validatePQMnemonic(pendingMnemonic.value)
+);
+const canRestoreBackup = computed(
     () =>
         !busy.value &&
         restoreJson.value.trim().length > 0 &&
         restorePassword.value.length > 0
 );
+const canRestoreMnemonic = computed(
+    () =>
+        !busy.value &&
+        restoreMnemonic.value.trim().length > 0 &&
+        restoreMnemonicPassword.value.length > 0 &&
+        restoreMnemonicPasswordConfirm.value.length > 0
+);
 const canUnlockWallet = computed(
     () => !busy.value && unlockPassword.value.length > 0
+);
+const pendingMnemonicWords = computed(() =>
+    pendingMnemonic.value ? pendingMnemonic.value.split(' ') : []
+);
+const revealedMnemonicWords = computed(() =>
+    revealedMnemonic.value ? revealedMnemonic.value.split(' ') : []
 );
 
 const recipientValid = computed(() =>
@@ -319,6 +356,26 @@ const PQ_ERROR_MAPPINGS = [
     {
         text: 'Failed to encrypt the PQ wallet verifier',
         key: 'pqErrorEncryptVerifier',
+    },
+    {
+        text: 'Failed to encrypt the PQ wallet recovery phrase',
+        key: 'pqErrorEncryptRecoveryPhrase',
+    },
+    {
+        text: 'Invalid PQ wallet recovery phrase',
+        key: 'pqErrorInvalidRecoveryPhrase',
+    },
+    {
+        text: 'Corrupted PQ wallet recovery phrase',
+        key: 'pqErrorCorruptedRecoveryPhrase',
+    },
+    {
+        text: 'PQ wallet recovery phrase is unavailable; use the encrypted JSON backup',
+        key: 'pqErrorRecoveryPhraseUnavailable',
+    },
+    {
+        text: 'PQ wallet recovery phrase does not match its addresses',
+        key: 'pqErrorRecoveryPhraseMismatch',
     },
     { text: 'Failed to encrypt a PQ seed', key: 'pqErrorEncryptSeed' },
     {
@@ -594,7 +651,47 @@ async function unlockAfterSetup(password, failureKey) {
     }
 }
 
-async function handleCreate() {
+function openSetup(mode) {
+    error.value = '';
+    setupMode.value = mode;
+    if (mode === 'restore') restoreMode.value = 'mnemonic';
+}
+
+function returnToChoices() {
+    error.value = '';
+    setupMode.value = 'choices';
+    createPassword.value = '';
+    createPasswordConfirm.value = '';
+    pendingMnemonic.value = '';
+    mnemonicSaved.value = false;
+    restoreMnemonic.value = '';
+    restoreMnemonicPassword.value = '';
+    restoreMnemonicPasswordConfirm.value = '';
+    restoreJson.value = '';
+    restorePassword.value = '';
+}
+
+function returnToCreatePassword() {
+    error.value = '';
+    pendingMnemonic.value = '';
+    mnemonicSaved.value = false;
+    setupMode.value = 'create';
+}
+
+function selectRestoreMode(mode) {
+    error.value = '';
+    restoreMode.value = mode;
+    if (mode === 'mnemonic') {
+        restoreJson.value = '';
+        restorePassword.value = '';
+    } else {
+        restoreMnemonic.value = '';
+        restoreMnemonicPassword.value = '';
+        restoreMnemonicPasswordConfirm.value = '';
+    }
+}
+
+function prepareCreate() {
     error.value = '';
     if (busy.value) return;
     if (createPassword.value.length < MIN_PASS_LENGTH) {
@@ -607,25 +704,43 @@ async function handleCreate() {
         error.value = tr(translation.pqErrorPasswordsDoNotMatch, []);
         return;
     }
+    pendingMnemonic.value = generatePQMnemonic();
+    mnemonicSaved.value = false;
+    setupMode.value = 'recovery';
+}
+
+async function handleCreate() {
+    error.value = '';
+    if (busy.value || !mnemonicSaved.value) return;
+    if (!validatePQMnemonic(pendingMnemonic.value)) {
+        error.value = tr(translation.pqErrorInvalidRecoveryPhrase, []);
+        return;
+    }
     // Keep the password until the fresh store is unlocked: createWallet only
     // writes encrypted records, it does not load the seeds into memory.
     const password = createPassword.value;
+    const mnemonic = pendingMnemonic.value;
     busy.value = true;
     try {
         await createWallet({
             password,
             network: networkName.value,
             count: PQ_KEY_COUNT,
+            mnemonic,
         });
         if (
             !(await unlockAfterSetup(password, 'pqErrorUnlockNew'))
         ) {
             createPassword.value = '';
             createPasswordConfirm.value = '';
+            pendingMnemonic.value = '';
+            mnemonicSaved.value = false;
             return;
         }
         createPassword.value = '';
         createPasswordConfirm.value = '';
+        pendingMnemonic.value = '';
+        mnemonicSaved.value = false;
         justCreated.value = true;
         await enterUnlocked();
     } catch (exception) {
@@ -635,7 +750,55 @@ async function handleCreate() {
     }
 }
 
-async function handleRestore() {
+async function handleRestoreMnemonic() {
+    error.value = '';
+    if (busy.value) return;
+    const mnemonic = normalizePQMnemonic(restoreMnemonic.value);
+    if (!validatePQMnemonic(mnemonic)) {
+        error.value = tr(translation.pqErrorInvalidRecoveryPhrase, []);
+        return;
+    }
+    if (restoreMnemonicPassword.value.length < MIN_PASS_LENGTH) {
+        error.value = tr(translation.pqErrorCreatePasswordMin, [
+            { count: MIN_PASS_LENGTH },
+        ]);
+        return;
+    }
+    if (
+        restoreMnemonicPassword.value !==
+        restoreMnemonicPasswordConfirm.value
+    ) {
+        error.value = tr(translation.pqErrorPasswordsDoNotMatch, []);
+        return;
+    }
+    const password = restoreMnemonicPassword.value;
+    busy.value = true;
+    try {
+        await createWallet({
+            password,
+            network: networkName.value,
+            count: PQ_KEY_COUNT,
+            mnemonic,
+        });
+        if (!(await unlockAfterSetup(password, 'pqErrorUnlockRestored'))) {
+            restoreMnemonic.value = '';
+            restoreMnemonicPassword.value = '';
+            restoreMnemonicPasswordConfirm.value = '';
+            return;
+        }
+        restoreMnemonic.value = '';
+        restoreMnemonicPassword.value = '';
+        restoreMnemonicPasswordConfirm.value = '';
+        justCreated.value = false;
+        await enterUnlocked();
+    } catch (exception) {
+        error.value = describeError(exception, 'pqErrorRestore');
+    } finally {
+        busy.value = false;
+    }
+}
+
+async function handleRestoreBackup() {
     error.value = '';
     if (busy.value) return;
     let backup;
@@ -710,6 +873,9 @@ async function handleUnlock() {
 function clearWalletState() {
     clearTimeout(previewTimer);
     clearTimeout(revealTimer);
+    clearTimeout(recoveryTimer);
+    revealTimer = null;
+    recoveryTimer = null;
     addresses.value = [];
     utxos.value = [];
     activity.value = [];
@@ -726,12 +892,23 @@ function clearWalletState() {
     // Never keep a typed password around after a lock or a network change.
     createPassword.value = '';
     createPasswordConfirm.value = '';
+    pendingMnemonic.value = '';
+    mnemonicSaved.value = false;
+    restoreMnemonic.value = '';
+    restoreMnemonicPassword.value = '';
+    restoreMnemonicPasswordConfirm.value = '';
+    restoreJson.value = '';
     restorePassword.value = '';
+    setupMode.value = 'choices';
+    restoreMode.value = 'mnemonic';
     unlockPassword.value = '';
     revealAddress.value = '';
     revealPassword.value = '';
     revealedSeed.value = '';
     revealError.value = '';
+    recoveryPassword.value = '';
+    revealedMnemonic.value = '';
+    recoveryError.value = '';
     masternodeRecords.value = [];
     registryRecords.value = [];
     chainHeight.value = null;
@@ -762,8 +939,9 @@ function handleUnload() {
 // --- Receive ---
 
 function selectTab(id) {
-    // A revealed seed must not survive a tab switch.
+    // Revealed recovery material must not survive a tab switch.
     clearReveal();
+    clearRecoveryMnemonic();
     activeTab.value = id;
     if (id === 'receive') ensureReceiveAddress();
     if (id === 'activity' && !activityLoaded.value) loadActivity();
@@ -1289,6 +1467,44 @@ function clearReveal() {
     revealError.value = '';
 }
 
+function scheduleRecoveryTimeout() {
+    clearTimeout(recoveryTimer);
+    recoveryTimer = setTimeout(() => {
+        revealedMnemonic.value = '';
+        recoveryTimer = null;
+    }, REVEAL_TIMEOUT_MS);
+}
+
+async function revealRecoveryMnemonic() {
+    recoveryError.value = '';
+    revealedMnemonic.value = '';
+    busy.value = true;
+    try {
+        revealedMnemonic.value = await getRecoveryMnemonic(
+            recoveryPassword.value
+        );
+        recoveryPassword.value = '';
+        scheduleRecoveryTimeout();
+    } catch (exception) {
+        recoveryPassword.value = '';
+        revealedMnemonic.value = '';
+        recoveryError.value = describeError(
+            exception,
+            'pqErrorRevealRecoveryPhrase'
+        );
+    } finally {
+        busy.value = false;
+    }
+}
+
+function clearRecoveryMnemonic() {
+    clearTimeout(recoveryTimer);
+    recoveryTimer = null;
+    recoveryPassword.value = '';
+    revealedMnemonic.value = '';
+    recoveryError.value = '';
+}
+
 // --- Lifecycle ---
 
 watch(
@@ -1310,6 +1526,15 @@ onBeforeUnmount(() => {
     window.removeEventListener('beforeunload', handleUnload);
     clearTimeout(previewTimer);
     clearTimeout(revealTimer);
+    clearTimeout(recoveryTimer);
+    pendingMnemonic.value = '';
+    restoreMnemonic.value = '';
+    revealedMnemonic.value = '';
+    createPassword.value = '';
+    createPasswordConfirm.value = '';
+    restoreMnemonicPassword.value = '';
+    restoreMnemonicPasswordConfirm.value = '';
+    recoveryPassword.value = '';
 });
 </script>
 
@@ -1351,28 +1576,49 @@ onBeforeUnmount(() => {
             <div class="pqPanelHeader">
                 <h4 class="pqTopConfigured">{{ translation.pqSetupTitle }}</h4>
             </div>
-            <div class="pqTabs">
+            <p v-if="setupMode === 'choices'" class="pqInfo pqSetupIntro">
+                {{ translation.pqSetupIntro }}
+            </p>
+
+            <div v-if="setupMode === 'choices'" class="pqSetupChoices">
                 <button
-                    class="pqTab"
-                    :class="{ active: setupMode === 'create' }"
+                    type="button"
+                    class="dashboard-item dashboard-display pqSetupChoice"
+                    data-testid="pq-create-choice"
                     :disabled="busy"
-                    @click="setupMode = 'create'"
+                    @click="openSetup('create')"
                 >
-                    {{ translation.pqCreateTab }}
+                    <span class="coinstat-icon" v-html="newWalletIcon"></span>
+                    <span class="dashboard-title">
+                        <strong class="pqChoiceTitle">{{
+                            translation.pqCreateChoiceTitle
+                        }}</strong>
+                        <span class="pqChoiceDescription">{{
+                            translation.pqCreateChoiceDescription
+                        }}</span>
+                    </span>
                 </button>
                 <button
-                    class="pqTab"
-                    :class="{ active: setupMode === 'restore' }"
+                    type="button"
+                    class="dashboard-item dashboard-display pqSetupChoice"
+                    data-testid="pq-restore-choice"
                     :disabled="busy"
-                    @click="setupMode = 'restore'"
+                    @click="openSetup('restore')"
                 >
-                    {{ translation.pqRestoreTab }}
+                    <span class="coinstat-icon" v-html="importIcon"></span>
+                    <span class="dashboard-title">
+                        <strong class="pqChoiceTitle">{{
+                            translation.pqRestoreChoiceTitle
+                        }}</strong>
+                        <span class="pqChoiceDescription">{{
+                            translation.pqRestoreChoiceDescription
+                        }}</span>
+                    </span>
                 </button>
             </div>
 
-            <template v-if="setupMode === 'create'">
+            <template v-else-if="setupMode === 'create'">
                 <p class="pqWarning">
-                    <strong>{{ translation.pqBackupNow }}</strong>
                     {{
                         tr(translation.pqCreateWarning, [
                             { count: PQ_KEY_COUNT },
@@ -1401,59 +1647,181 @@ onBeforeUnmount(() => {
                         class="form-control"
                         :placeholder="translation.pqRepeatPassword"
                         autocomplete="new-password"
-                        @keyup.enter="handleCreate"
+                        @keyup.enter="prepareCreate"
                     />
                 </div>
                 <p v-if="error" class="pqError">{{ error }}</p>
+                <div class="pqRow pqSetupActions">
+                    <button class="pqCopyBtn" :disabled="busy" @click="returnToChoices">
+                        {{ translation.pqBack }}
+                    </button>
+                    <button
+                        class="pivx-button-small"
+                        data-testid="pq-create-continue"
+                        :disabled="!canContinueCreate"
+                        @click="prepareCreate"
+                    >
+                        {{ translation.pqContinueToRecoveryPhrase }}
+                    </button>
+                </div>
+            </template>
+
+            <template v-else-if="setupMode === 'recovery'">
+                <h4 class="pqTopConfigured">{{
+                    translation.pqRecoveryPhraseTitle
+                }}</h4>
+                <p class="pqWarning">
+                    <strong>{{ translation.pqBackupNow }}</strong>
+                    {{ translation.pqRecoveryPhraseWarning }}
+                </p>
+                <div class="pqRecoveryGrid" data-testid="pq-created-mnemonic">
+                    <div
+                        v-for="(word, index) in pendingMnemonicWords"
+                        :key="index"
+                        class="pqRecoveryWord"
+                    >
+                        <span>{{ index + 1 }}</span>
+                        <strong>{{ word }}</strong>
+                    </div>
+                </div>
                 <button
-                    class="pivx-button-small"
-                    :disabled="!canCreateWallet"
-                    @click="handleCreate"
+                    class="pqCopyBtn pqMnemonicCopy"
+                    data-testid="pq-copy-mnemonic"
+                    @click="copyText(pendingMnemonic)"
                 >
-                    {{
-                        busy
-                            ? translation.pqCreating
-                            : translation.pqCreateWallet
-                    }}
+                    {{ translation.pqCopyRecoveryPhrase }}
                 </button>
+                <label class="pqMnemonicConfirmation">
+                    <input
+                        v-model="mnemonicSaved"
+                        type="checkbox"
+                        data-testid="pq-mnemonic-saved"
+                    />
+                    <span>{{ translation.pqRecoveryPhraseSaved }}</span>
+                </label>
+                <p v-if="error" class="pqError">{{ error }}</p>
+                <div class="pqRow pqSetupActions">
+                    <button class="pqCopyBtn" :disabled="busy" @click="returnToCreatePassword">
+                        {{ translation.pqBack }}
+                    </button>
+                    <button
+                        class="pivx-button-small"
+                        data-testid="pq-create-finish"
+                        :disabled="!canFinishCreate"
+                        @click="handleCreate"
+                    >
+                        {{ busy ? translation.pqCreating : translation.pqCreateWallet }}
+                    </button>
+                </div>
             </template>
 
             <template v-else>
-                <p class="pqInfo">
-                    {{ translation.pqRestoreInfo }}
-                </p>
-                <div class="pqField">
-                    <span>{{ translation.pqBackupJson }}</span>
-                    <textarea
-                        v-model="restoreJson"
-                        class="form-control pqBackupInput"
-                        rows="5"
-                        :placeholder="translation.pqBackupJsonPlaceholder"
-                    ></textarea>
+                <div class="pqTabs pqRestoreTabs">
+                    <button
+                        class="pqTab pqRestoreMode"
+                        :class="{ active: restoreMode === 'mnemonic' }"
+                        :disabled="busy"
+                        @click="selectRestoreMode('mnemonic')"
+                    >
+                        {{ translation.pqRestoreWithRecoveryPhrase }}
+                    </button>
+                    <button
+                        class="pqTab pqRestoreMode"
+                        :class="{ active: restoreMode === 'backup' }"
+                        :disabled="busy"
+                        @click="selectRestoreMode('backup')"
+                    >
+                        {{ translation.pqRestoreWithJsonBackup }}
+                    </button>
                 </div>
-                <div class="pqField">
-                    <span>{{ translation.pqBackupPassword }}</span>
-                    <input
-                        v-model="restorePassword"
-                        type="password"
-                        class="form-control"
-                        :placeholder="translation.pqPassword"
-                        autocomplete="current-password"
-                        @keyup.enter="handleRestore"
-                    />
-                </div>
-                <p v-if="error" class="pqError">{{ error }}</p>
-                <button
-                    class="pivx-button-small"
-                    :disabled="!canRestoreWallet"
-                    @click="handleRestore"
-                >
-                    {{
-                        busy
-                            ? translation.pqRestoring
-                            : translation.pqRestoreWallet
-                    }}
-                </button>
+
+                <template v-if="restoreMode === 'mnemonic'">
+                    <p class="pqInfo">{{ translation.pqRestoreMnemonicInfo }}</p>
+                    <div class="pqField pqFieldStacked">
+                        <span>{{ translation.pqRecoveryPhrase }}</span>
+                        <textarea
+                            v-model="restoreMnemonic"
+                            class="form-control pqMnemonicInput"
+                            rows="5"
+                            :placeholder="translation.pqRecoveryPhrasePlaceholder"
+                            autocomplete="off"
+                            autocapitalize="off"
+                            spellcheck="false"
+                        ></textarea>
+                    </div>
+                    <div class="pqField">
+                        <span>{{ translation.pqNewPassword }}</span>
+                        <input
+                            v-model="restoreMnemonicPassword"
+                            type="password"
+                            class="form-control"
+                            :placeholder="tr(translation.pqPasswordMinHint, [{ count: MIN_PASS_LENGTH }])"
+                            autocomplete="new-password"
+                        />
+                    </div>
+                    <div class="pqField">
+                        <span>{{ translation.pqConfirmPassword }}</span>
+                        <input
+                            v-model="restoreMnemonicPasswordConfirm"
+                            type="password"
+                            class="form-control"
+                            :placeholder="translation.pqRepeatPassword"
+                            autocomplete="new-password"
+                            @keyup.enter="handleRestoreMnemonic"
+                        />
+                    </div>
+                    <p v-if="error" class="pqError">{{ error }}</p>
+                    <div class="pqRow pqSetupActions">
+                        <button class="pqCopyBtn" :disabled="busy" @click="returnToChoices">
+                            {{ translation.pqBack }}
+                        </button>
+                        <button
+                            class="pivx-button-small"
+                            data-testid="pq-restore-mnemonic"
+                            :disabled="!canRestoreMnemonic"
+                            @click="handleRestoreMnemonic"
+                        >
+                            {{ busy ? translation.pqRestoring : translation.pqRestoreWallet }}
+                        </button>
+                    </div>
+                </template>
+
+                <template v-else>
+                    <p class="pqInfo">{{ translation.pqRestoreInfo }}</p>
+                    <div class="pqField pqFieldStacked">
+                        <span>{{ translation.pqBackupJson }}</span>
+                        <textarea
+                            v-model="restoreJson"
+                            class="form-control pqBackupInput"
+                            rows="5"
+                            :placeholder="translation.pqBackupJsonPlaceholder"
+                        ></textarea>
+                    </div>
+                    <div class="pqField">
+                        <span>{{ translation.pqBackupPassword }}</span>
+                        <input
+                            v-model="restorePassword"
+                            type="password"
+                            class="form-control"
+                            :placeholder="translation.pqPassword"
+                            autocomplete="current-password"
+                            @keyup.enter="handleRestoreBackup"
+                        />
+                    </div>
+                    <p v-if="error" class="pqError">{{ error }}</p>
+                    <div class="pqRow pqSetupActions">
+                        <button class="pqCopyBtn" :disabled="busy" @click="returnToChoices">
+                            {{ translation.pqBack }}
+                        </button>
+                        <button
+                            class="pivx-button-small"
+                            :disabled="!canRestoreBackup"
+                            @click="handleRestoreBackup"
+                        >
+                            {{ busy ? translation.pqRestoring : translation.pqRestoreWallet }}
+                        </button>
+                    </div>
+                </template>
             </template>
         </div>
 
@@ -1927,6 +2295,69 @@ onBeforeUnmount(() => {
                 <hr />
 
                 <h4 class="pqTopConfigured">
+                    {{ translation.pqRecoveryPhraseTitle }}
+                </h4>
+                <p class="pqWarning">
+                    <strong>{{ translation.pqDanger }}</strong>
+                    {{ translation.pqRevealRecoveryPhraseWarning }}
+                </p>
+                <div class="pqField">
+                    <span>{{ translation.pqPassword }}</span>
+                    <input
+                        v-model="recoveryPassword"
+                        type="password"
+                        class="form-control"
+                        data-testid="pq-mnemonic-password"
+                        :placeholder="translation.pqReenterPassword"
+                        autocomplete="current-password"
+                        @keyup.enter="revealRecoveryMnemonic"
+                    />
+                </div>
+                <p v-if="recoveryError" class="pqError">{{ recoveryError }}</p>
+                <div class="pqRow">
+                    <button
+                        v-if="!revealedMnemonic"
+                        class="pivx-button-small"
+                        data-testid="pq-reveal-mnemonic"
+                        :disabled="busy || !recoveryPassword"
+                        @click="revealRecoveryMnemonic"
+                    >
+                        {{ translation.pqRevealRecoveryPhrase }}
+                    </button>
+                    <button
+                        v-else
+                        class="pqCopyBtn"
+                        data-testid="pq-hide-mnemonic"
+                        @click="clearRecoveryMnemonic"
+                    >
+                        {{ translation.pqHideRecoveryPhrase }}
+                    </button>
+                </div>
+                <div
+                    v-if="revealedMnemonic"
+                    class="pqRecoveryGrid pqRevealedRecovery"
+                    data-testid="pq-revealed-mnemonic"
+                >
+                    <div
+                        v-for="(word, index) in revealedMnemonicWords"
+                        :key="index"
+                        class="pqRecoveryWord"
+                    >
+                        <span>{{ index + 1 }}</span>
+                        <strong>{{ word }}</strong>
+                    </div>
+                </div>
+                <button
+                    v-if="revealedMnemonic"
+                    class="pivx-button-small pqMnemonicCopy"
+                    @click="copyText(revealedMnemonic)"
+                >
+                    {{ translation.pqCopyRecoveryPhrase }}
+                </button>
+
+                <hr />
+
+                <h4 class="pqTopConfigured">
                     {{ translation.pqRevealSeedTitle }}
                 </h4>
                 <p class="pqWarning">
@@ -1954,6 +2385,7 @@ onBeforeUnmount(() => {
                         v-model="revealPassword"
                         type="password"
                         class="form-control"
+                        data-testid="pq-seed-password"
                         :placeholder="translation.pqReenterPassword"
                         autocomplete="current-password"
                         @keyup.enter="revealSeed"
@@ -2008,6 +2440,140 @@ onBeforeUnmount(() => {
 
 .warningPanel {
     border-color: #c58b2b;
+}
+
+.pqSetupIntro {
+    text-align: center;
+    max-width: 640px;
+    margin-right: auto;
+    margin-left: auto;
+}
+
+.pqSetupChoices {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 18px;
+}
+
+.pqSetupChoice {
+    float: none;
+    width: 100%;
+    min-height: 260px;
+    margin: 0;
+    font: inherit;
+}
+
+.pqSetupChoice:disabled {
+    cursor: wait;
+    opacity: 0.65;
+}
+
+.pqSetupChoice .dashboard-title {
+    display: block;
+}
+
+.pqChoiceTitle,
+.pqChoiceDescription {
+    display: block;
+}
+
+.pqChoiceTitle {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 1.22rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.pqChoiceDescription {
+    max-width: 310px;
+    margin: 10px auto 0;
+    color: var(--theme-text-muted) !important;
+    font-size: 0.94rem;
+    line-height: 1.5;
+}
+
+.pqSetupActions {
+    justify-content: flex-end;
+    margin-top: 18px;
+}
+
+.pqRestoreTabs {
+    margin: 0 0 18px;
+}
+
+.pqFieldStacked {
+    align-items: stretch;
+    flex-direction: column;
+}
+
+.pqFieldStacked span:first-child {
+    min-width: 0;
+}
+
+.pqRecoveryGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 9px;
+    margin: 18px 0 14px;
+}
+
+.pqRecoveryWord {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--theme-border);
+    border-radius: 9px;
+    background: var(--theme-surface-2);
+    color: var(--theme-text);
+}
+
+.pqRecoveryWord span {
+    flex: 0 0 22px;
+    color: var(--theme-text-muted);
+    font-size: 0.75rem;
+    text-align: right;
+}
+
+.pqRecoveryWord strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 0.9rem;
+}
+
+.pqMnemonicCopy {
+    margin-top: 2px;
+}
+
+.pqMnemonicConfirmation {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-top: 18px;
+    color: var(--theme-text);
+    cursor: pointer;
+}
+
+.pqMnemonicConfirmation input {
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+    accent-color: var(--theme-accent);
+}
+
+.pqRevealedRecovery {
+    margin-top: 18px;
+}
+
+.pqSetupChoice:focus-visible,
+.pqTab:focus-visible,
+.pqCopyBtn:focus-visible,
+.pivx-button-small:focus-visible {
+    outline: 3px solid var(--theme-accent);
+    outline-offset: 3px;
 }
 
 .pqPanelHeader {
@@ -2202,5 +2768,30 @@ onBeforeUnmount(() => {
 
 .pqDangerButton {
     border-color: #f93c4c;
+}
+
+@media (max-width: 767px) {
+    .pqSetupChoices {
+        grid-template-columns: 1fr;
+    }
+
+    .pqSetupChoice {
+        min-height: 220px;
+    }
+
+    .pqRecoveryGrid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .pqSetupActions .pivx-button-small,
+    .pqSetupActions .pqCopyBtn {
+        flex: 1;
+    }
+}
+
+@media (max-width: 390px) {
+    .pqRecoveryGrid {
+        grid-template-columns: 1fr;
+    }
 }
 </style>
