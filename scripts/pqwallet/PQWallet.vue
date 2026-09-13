@@ -139,10 +139,12 @@ const revealPassword = ref('');
 const revealedSeed = ref('');
 const revealError = ref('');
 let revealTimer = null;
+let revealGeneration = 0;
 const recoveryPassword = ref('');
 const revealedMnemonic = ref('');
 const recoveryError = ref('');
 let recoveryTimer = null;
+let recoveryRevealGeneration = 0;
 
 // --- Non-custodial testnet masternodes ---
 const masternodeRecords = ref([]);
@@ -871,6 +873,8 @@ async function handleUnlock() {
 }
 
 function clearWalletState() {
+    revealGeneration += 1;
+    recoveryRevealGeneration += 1;
     clearTimeout(previewTimer);
     clearTimeout(revealTimer);
     clearTimeout(recoveryTimer);
@@ -934,6 +938,7 @@ function handleLock() {
 
 function handleUnload() {
     lockWallet();
+    clearWalletState();
 }
 
 // --- Receive ---
@@ -1425,15 +1430,18 @@ async function downloadBackup() {
     }
 }
 
-function scheduleRevealTimeout() {
+function scheduleRevealTimeout(generation) {
     clearTimeout(revealTimer);
     revealTimer = setTimeout(() => {
+        if (generation !== revealGeneration) return;
         revealedSeed.value = '';
         revealTimer = null;
+        revealGeneration += 1;
     }, REVEAL_TIMEOUT_MS);
 }
 
 async function revealSeed() {
+    const generation = ++revealGeneration;
     revealError.value = '';
     revealedSeed.value = '';
     busy.value = true;
@@ -1443,14 +1451,23 @@ async function revealSeed() {
             (key) => key.address === revealAddress.value
         );
         if (!record) throw new Error('Unknown PQ address');
-        revealedSeed.value = await withDecryptedSeed(
+        const seedHex = await withDecryptedSeed(
             record.encryptedSeed,
             revealPassword.value,
             (seed) => bytesToHex(seed)
         );
+        if (
+            generation !== revealGeneration ||
+            view.value !== 'unlocked' ||
+            activeTab.value !== 'backup'
+        ) {
+            return;
+        }
+        revealedSeed.value = seedHex;
         revealPassword.value = '';
-        scheduleRevealTimeout();
+        scheduleRevealTimeout(generation);
     } catch (exception) {
+        if (generation !== revealGeneration) return;
         revealedSeed.value = '';
         revealError.value = describeError(exception, 'pqErrorReveal');
     } finally {
@@ -1459,6 +1476,7 @@ async function revealSeed() {
 }
 
 function clearReveal() {
+    revealGeneration += 1;
     clearTimeout(revealTimer);
     revealTimer = null;
     revealAddress.value = '';
@@ -1467,25 +1485,37 @@ function clearReveal() {
     revealError.value = '';
 }
 
-function scheduleRecoveryTimeout() {
+function scheduleRecoveryTimeout(generation) {
     clearTimeout(recoveryTimer);
     recoveryTimer = setTimeout(() => {
+        if (generation !== recoveryRevealGeneration) return;
         revealedMnemonic.value = '';
         recoveryTimer = null;
+        recoveryRevealGeneration += 1;
     }, REVEAL_TIMEOUT_MS);
 }
 
 async function revealRecoveryMnemonic() {
+    const generation = ++recoveryRevealGeneration;
     recoveryError.value = '';
     revealedMnemonic.value = '';
     busy.value = true;
     try {
-        revealedMnemonic.value = await getRecoveryMnemonic(
+        const mnemonic = await getRecoveryMnemonic(
             recoveryPassword.value
         );
+        if (
+            generation !== recoveryRevealGeneration ||
+            view.value !== 'unlocked' ||
+            activeTab.value !== 'backup'
+        ) {
+            return;
+        }
+        revealedMnemonic.value = mnemonic;
         recoveryPassword.value = '';
-        scheduleRecoveryTimeout();
+        scheduleRecoveryTimeout(generation);
     } catch (exception) {
+        if (generation !== recoveryRevealGeneration) return;
         recoveryPassword.value = '';
         revealedMnemonic.value = '';
         recoveryError.value = describeError(
@@ -1498,6 +1528,7 @@ async function revealRecoveryMnemonic() {
 }
 
 function clearRecoveryMnemonic() {
+    recoveryRevealGeneration += 1;
     clearTimeout(recoveryTimer);
     recoveryTimer = null;
     recoveryPassword.value = '';
@@ -1519,11 +1550,15 @@ watch(
 
 onMounted(async () => {
     window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
     await initialize();
 });
 
 onBeforeUnmount(() => {
     window.removeEventListener('beforeunload', handleUnload);
+    window.removeEventListener('pagehide', handleUnload);
+    revealGeneration += 1;
+    recoveryRevealGeneration += 1;
     clearTimeout(previewTimer);
     clearTimeout(revealTimer);
     clearTimeout(recoveryTimer);

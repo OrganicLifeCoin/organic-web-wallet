@@ -20,6 +20,7 @@ vi.mock('../../scripts/pqwallet/pqnetwork.js', async (importOriginal) => {
 });
 
 import PQWallet from '../../scripts/pqwallet/PQWallet.vue';
+import * as pqWalletStore from '../../scripts/pqwallet/pqwallet-store.js';
 import {
     createWallet,
     deleteWallet,
@@ -478,5 +479,123 @@ describe('PQWallet UI', () => {
         expect(view.find('[data-testid="pq-revealed-mnemonic"]').exists()).toBe(
             false
         );
+    });
+
+    it('cancels a pending recovery-phrase reveal when the wallet locks', async () => {
+        const revealCallbacks = [];
+        const originalSetTimeout = globalThis.setTimeout;
+        const timeoutSpy = vi
+            .spyOn(globalThis, 'setTimeout')
+            .mockImplementation((callback, ms, ...rest) => {
+                if (ms === 60000) {
+                    revealCallbacks.push(callback);
+                    return 0;
+                }
+                return originalSetTimeout(callback, ms, ...rest);
+            });
+        let resolveReveal;
+        const revealSpy = vi
+            .spyOn(pqWalletStore, 'getRecoveryMnemonic')
+            .mockImplementation(
+                () =>
+                    new Promise((resolve) => {
+                        resolveReveal = resolve;
+                    })
+            );
+        try {
+            await createWallet({
+                password: PASSWORD,
+                network: 'testnet',
+                count: 2,
+                mnemonic: RECOVERY_PHRASE,
+            });
+            await unlockWallet(PASSWORD);
+            const view = mountWallet();
+            await waitFor(async () => view.text().includes('Activity'));
+            const backupTab = view
+                .findAll('button.pqTab')
+                .find((button) => button.text() === 'Backup');
+            await backupTab.trigger('click');
+            await view
+                .get('[data-testid="pq-mnemonic-password"]')
+                .setValue(PASSWORD);
+            await view
+                .get('[data-testid="pq-reveal-mnemonic"]')
+                .trigger('click');
+            await waitFor(() => revealSpy.mock.calls.length === 1);
+
+            const lockButton = view
+                .findAll('button.pqCopyBtn')
+                .find((button) => button.text() === 'Lock');
+            await lockButton.trigger('click');
+            resolveReveal(RECOVERY_PHRASE);
+            await flushPromises();
+
+            expect(view.text()).toContain('Wallet locked');
+            expect(
+                view.find('[data-testid="pq-revealed-mnemonic"]').exists()
+            ).toBe(false);
+            expect(revealCallbacks).toHaveLength(0);
+        } finally {
+            revealSpy.mockRestore();
+            timeoutSpy.mockRestore();
+        }
+    });
+
+    it('cancels a pending raw-seed reveal when the wallet locks', async () => {
+        const revealCallbacks = [];
+        const originalSetTimeout = globalThis.setTimeout;
+        const timeoutSpy = vi
+            .spyOn(globalThis, 'setTimeout')
+            .mockImplementation((callback, ms, ...rest) => {
+                if (ms === 60000) {
+                    revealCallbacks.push(callback);
+                    return 0;
+                }
+                return originalSetTimeout(callback, ms, ...rest);
+            });
+        let resolveReveal;
+        const revealSpy = vi
+            .spyOn(pqWalletStore, 'withDecryptedSeed')
+            .mockImplementation(
+                () =>
+                    new Promise((resolve) => {
+                        resolveReveal = resolve;
+                    })
+            );
+        try {
+            await createLockedWallet();
+            await unlockWallet(PASSWORD);
+            const [address] = await getAddresses();
+            const view = mountWallet();
+            await waitFor(async () => view.text().includes(address));
+            const backupTab = view
+                .findAll('button.pqTab')
+                .find((button) => button.text() === 'Backup');
+            await backupTab.trigger('click');
+            await view.find('select').setValue(address);
+            await view
+                .get('[data-testid="pq-seed-password"]')
+                .setValue(PASSWORD);
+            const revealButton = view
+                .findAll('button')
+                .find((button) => button.text() === 'Reveal seed');
+            await revealButton.trigger('click');
+            await waitFor(() => revealSpy.mock.calls.length === 1);
+
+            const lockButton = view
+                .findAll('button.pqCopyBtn')
+                .find((button) => button.text() === 'Lock');
+            await lockButton.trigger('click');
+            resolveReveal('11'.repeat(32));
+            await flushPromises();
+
+            expect(view.text()).toContain('Wallet locked');
+            expect(view.find('.pqSeedBox').exists()).toBe(false);
+            expect(revealCallbacks).toHaveLength(0);
+        } finally {
+            revealSpy.mockRestore();
+            timeoutSpy.mockRestore();
+        }
     });
 });
