@@ -78,7 +78,7 @@ const TABS = [
 ];
 
 // --- Global state ---
-const view = ref('loading'); // loading | none | locked | unlocked
+const view = ref('loading'); // loading | error | none | locked | unlocked
 const busy = ref(false);
 const error = ref('');
 const justCreated = ref(false);
@@ -505,7 +505,7 @@ async function initialize() {
         }
     } catch (exception) {
         error.value = describeError(exception, 'pqErrorLoad');
-        view.value = 'none';
+        view.value = 'error';
     }
 }
 
@@ -1337,6 +1337,13 @@ onBeforeUnmount(() => {
 
         <div v-if="view === 'loading'" class="dcWallet-activity pqPanel">
             <p class="pqInfo">{{ translation.pqLoading }}</p>
+        </div>
+
+        <div v-else-if="view === 'error'" class="dcWallet-activity pqPanel warningPanel">
+            <div class="pqPanelHeader">
+                <h4 class="pqTopConfigured">{{ translation.pqErrorLoad }}</h4>
+            </div>
+            <p class="pqError">{{ error }}</p>
         </div>
 
         <!-- No wallet: create or restore -->

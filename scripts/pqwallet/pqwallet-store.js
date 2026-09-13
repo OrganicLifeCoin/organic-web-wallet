@@ -34,6 +34,8 @@ const OPERATOR_PUBLIC_KEY_PATTERN = /^[0-9a-f]{2624}$/;
 const MASTERNODE_STATUSES = new Set(['draft', 'registered', 'withdrawn']);
 const MAX_KEYS = 100;
 const MAX_ENCRYPTED_SECRET_LENGTH = 512;
+const DATABASE_BLOCKED_MESSAGE =
+    'Close other OrganicLifeCoin wallet tabs, then reload this page';
 
 let dbPromise = null;
 let unlockedSeeds = null;
@@ -41,7 +43,12 @@ let receiveCursor = 0;
 
 function getDatabase() {
     if (!dbPromise) {
-        dbPromise = openDB(PQ_WALLET_DB_NAME, PQ_WALLET_DB_VERSION, {
+        let rejectBlocked;
+        let upgradeWasBlocked = false;
+        const blockedPromise = new Promise((_, reject) => {
+            rejectBlocked = reject;
+        });
+        const openPromise = openDB(PQ_WALLET_DB_NAME, PQ_WALLET_DB_VERSION, {
             upgrade(database) {
                 if (!database.objectStoreNames.contains('wallet')) {
                     database.createObjectStore('wallet', { keyPath: 'id' });
@@ -53,6 +60,29 @@ function getDatabase() {
                     database.createObjectStore('masternodes', { keyPath: 'id' });
                 }
             },
+            blocked() {
+                upgradeWasBlocked = true;
+                rejectBlocked(new Error(DATABASE_BLOCKED_MESSAGE));
+            },
+            blocking(_currentVersion, _blockedVersion, event) {
+                event.target.close();
+                dbPromise = null;
+            },
+            terminated() {
+                dbPromise = null;
+            },
+        });
+        openPromise
+            .then((database) => {
+                if (upgradeWasBlocked) database.close();
+            })
+            .catch(() => {});
+        const currentPromise = Promise.race([openPromise, blockedPromise]);
+        dbPromise = currentPromise;
+        currentPromise.catch(() => {
+            if (!upgradeWasBlocked && dbPromise === currentPromise) {
+                dbPromise = null;
+            }
         });
     }
     return dbPromise;
