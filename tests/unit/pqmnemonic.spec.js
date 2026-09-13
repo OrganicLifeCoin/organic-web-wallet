@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { bytesToHex } from '@noble/hashes/utils';
 import {
     derivePQSeed,
@@ -16,6 +16,18 @@ describe('PQ recovery mnemonic', () => {
 
         expect(mnemonic.split(' ')).toHaveLength(24);
         expect(validatePQMnemonic(mnemonic)).toBe(true);
+    });
+
+    it('works when the browser has no Buffer global', () => {
+        const originalBuffer = globalThis.Buffer;
+        vi.stubGlobal('Buffer', undefined);
+        try {
+            const mnemonic = generatePQMnemonic();
+            expect(validatePQMnemonic(mnemonic)).toBe(true);
+            expect(derivePQSeed(mnemonic, 0)).toHaveLength(32);
+        } finally {
+            vi.stubGlobal('Buffer', originalBuffer);
+        }
     });
 
     it('normalizes harmless whitespace before validation', () => {
