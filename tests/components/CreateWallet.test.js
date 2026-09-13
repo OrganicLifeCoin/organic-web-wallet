@@ -35,12 +35,11 @@ describe('create wallet tests', () => {
             wrapper.findComponent(Modal).findAll('[data-testid=passPhrase]')
         ).toHaveLength(0);
         expect(seedphraseModals).toHaveLength(1);
-        // Remove digits since they aren't part of the seedphrase
         const seedphrase = wrapper
             .findComponent(Modal)
-            .text()
-            .replace(/\d/g, '')
-            .trim();
+            .findAll('.privateKeysBadge span')
+            .map((word) => word.text())
+            .join(' ');
         // We must have 12 words in the seedphrase
         expect(seedphrase.split(' ')).toHaveLength(12);
         const labelInput = wrapper
@@ -98,9 +97,9 @@ describe('create wallet tests', () => {
         expect(seedphraseModals).toHaveLength(1);
         const seedphrase = wrapper
             .findComponent(Modal)
-            .text()
-            .replace(/\d/g, '')
-            .trim();
+            .findAll('.privateKeysBadge span')
+            .map((word) => word.text())
+            .join(' ');
         // We must have 12 words in the seedphrase
         expect(seedphrase.split(' ')).toHaveLength(12);
         // Select a pass phrase

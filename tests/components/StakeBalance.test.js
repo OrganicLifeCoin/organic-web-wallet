@@ -66,7 +66,7 @@ describe('stake balance tests', () => {
         // Test that it is in focus
         expect(csaddrInput.element).toBe(document.activeElement);
         expect(csaddrInput.isVisible()).toBeTruthy();
-        const newCsAddr = 'PwGP8BzRUHQwchwwPuzAe9WqskgmbKp88f';
+        const newCsAddr = 'xXeEsz8kytwurpExNtxyvJZZrcZB9EDJbg';
         await csaddrInput.setValue(newCsAddr);
         const confirmButton = wrapper
             .findComponent(Modal)
@@ -91,7 +91,7 @@ describe('stake balance tests', () => {
             .findComponent(Modal)
             .find('[data-testid=csAddrInput]');
         expect(csaddrInput.isVisible()).toBeTruthy();
-        const newCsAddr = 'PwGP8BzRUHQwchwwPuzAe9WqskgmbKp88f';
+        const newCsAddr = 'xXeEsz8kytwurpExNtxyvJZZrcZB9EDJbg';
         await csaddrInput.setValue(newCsAddr);
         const cancelButton = wrapper
             .findComponent(Modal)

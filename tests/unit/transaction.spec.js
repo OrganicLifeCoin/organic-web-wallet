@@ -86,7 +86,7 @@ describe('transaction tests', () => {
         expect(ourTx).toStrictEqual(tx);
     });
 
-    it.sequential('updates txid when a property changes', () => {
+    it('updates txid when a property changes', () => {
         const [tx, txid] = testVector[0];
         const originalVersion = tx.version;
         expect(tx.txid).toBe(txid);

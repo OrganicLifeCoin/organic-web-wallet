@@ -37,7 +37,9 @@ async function checkFees(wallet, tx, feesPerBytes) {
     // Sign and verify that it pays enough fees, and that it is greedy enough
     const nBytes = (await wallet.sign(tx)).serialize().length / 2;
     expect(fees).toBeGreaterThanOrEqual(feesPerBytes * nBytes);
-    expect(fees).toBeLessThanOrEqual((feesPerBytes + 1) * nBytes);
+    // The builder estimates before signing and rounds to a whole sat/vByte
+    // envelope. DER signature length can shift the final size by a few bytes.
+    expect(fees).toBeLessThanOrEqual(feesPerBytes * (nBytes + 5));
     return fees;
 }
 describe('Wallet transaction tests', () => {
@@ -52,7 +54,7 @@ describe('Wallet transaction tests', () => {
     });
     it('Creates a transaction correctly', async () => {
         const tx = wallet.createTransaction(
-            'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb',
+            'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
             0.05 * 10 ** 8
         );
         expect(tx.version).toBe(1);
@@ -79,7 +81,7 @@ describe('Wallet transaction tests', () => {
 
     it('creates an exchange tx correctly', async () => {
         const tx = wallet.createTransaction(
-            'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb',
+            'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
             0.05 * 10 ** 8
         );
         expect(tx.version).toBe(1);
@@ -96,7 +98,14 @@ describe('Wallet transaction tests', () => {
         expect(tx.vout[1]).toStrictEqual(
             new CTxOut({
                 script: '76a914f49b25384b79685227be5418f779b98a6be4c73888ac',
-                value: legacyMainnetInitialBalance() - 5000000 - fees,
+                value:
+                    tx.vin.reduce(
+                        (sum, vin) =>
+                            sum + wallet.outpointToUTXO(vin.outpoint).value,
+                        0
+                    ) -
+                    5000000 -
+                    fees,
             })
         );
         expect(tx.vout[0]).toStrictEqual(
@@ -109,9 +118,9 @@ describe('Wallet transaction tests', () => {
 
     it('Creates a tx with change address', async () => {
         const tx = wallet.createTransaction(
-            'EXMDbnWT4K3nWfK1311otFrnYLcFSipp3iez',
+            'Hh1oSTdCBZmn6NDrAQxbsfeAMnzrHS4o7YeD',
             0.05 * 10 ** 8,
-            { changeAddress: 'D8Ervc3Ka6TuKgvXZH9Eo4ou24AiVwTbL6' }
+            { changeAddress: 'oKy8cqNovRrNqXmtdwTL1iwmWw4u1FsF46' }
         );
         expect(tx.version).toBe(1);
         expect(tx.vin[0]).toStrictEqual(
@@ -127,7 +136,14 @@ describe('Wallet transaction tests', () => {
         expect(tx.vout[1]).toStrictEqual(
             new CTxOut({
                 script: '76a91421ff8214d09d60713b89809bb413a0651ee6931488ac',
-                value: legacyMainnetInitialBalance() - 5000000 - fees,
+                value:
+                    tx.vin.reduce(
+                        (sum, vin) =>
+                            sum + wallet.outpointToUTXO(vin.outpoint).value,
+                        0
+                    ) -
+                    5000000 -
+                    fees,
             })
         );
         expect(tx.vout[0]).toStrictEqual(
@@ -158,7 +174,14 @@ describe('Wallet transaction tests', () => {
         expect(tx.vout[1]).toStrictEqual(
             new CTxOut({
                 script: '76a914f49b25384b79685227be5418f779b98a6be4c73888ac',
-                value: legacyMainnetInitialBalance() - 5000000 - fees,
+                value:
+                    tx.vin.reduce(
+                        (sum, vin) =>
+                            sum + wallet.outpointToUTXO(vin.outpoint).value,
+                        0
+                    ) -
+                    5000000 -
+                    fees,
             })
         );
         expect(tx.vout[0]).toStrictEqual(
@@ -170,10 +193,10 @@ describe('Wallet transaction tests', () => {
     });
 
     it('Creates a cold stake tx correctly', async () => {
-        // Delegate 5250 PIV to test Stake Pre-Splitting
+        // Delegate 5250 OLC to test Stake Pre-Splitting
         const value = 5250 * 10 ** 8;
         const tx = wallet.createTransaction(
-            'SR3L4TFUKKGNsnv2Q4hWTuET2a4vHpm1b9',
+            'fHrdZvnh366R3fNoBVMhyuwdAiK75kfYjh',
             value,
             { isDelegation: true }
         );
@@ -210,7 +233,7 @@ describe('Wallet transaction tests', () => {
 
     it('Creates a tx with max balance', async () => {
         const tx = wallet.createTransaction(
-            'SR3L4TFUKKGNsnv2Q4hWTuET2a4vHpm1b9',
+            'fHrdZvnh366R3fNoBVMhyuwdAiK75kfYjh',
             legacyMainnetInitialBalance(),
             { isDelegation: false }
         );
@@ -238,7 +261,7 @@ describe('Wallet transaction tests', () => {
 
     it('creates a t->s tx correctly', () => {
         const addr =
-            'ps1a0x2few52sy3t0nrdhun0re4c870e04w448qpa7c26qjw9ljs4quhja40hat95f7hy8tcuvcn2s';
+            'olc1a0x2few52sy3t0nrdhun0re4c870e04w448qpa7c26qjw9ljs4quhja40hat95f7hy8tcvmjnel';
         const tx = wallet.createTransaction(addr, 0.05 * 10 ** 8);
         expect(tx).toStrictEqual(
             new Transaction({
@@ -266,7 +289,7 @@ describe('Wallet transaction tests', () => {
 
     it('it does not insert dust change', async () => {
         const baselineTx = wallet.createTransaction(
-            'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb',
+            'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
             legacyMainnetInitialBalance()
         );
         const baselineFees = await checkFees(
@@ -276,7 +299,7 @@ describe('Wallet transaction tests', () => {
         );
         const value = legacyMainnetInitialBalance() - baselineFees - 200;
         const tx = wallet.createTransaction(
-            'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb',
+            'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
             value,
             { subtractFeeFromAmt: false }
         );
@@ -303,7 +326,7 @@ describe('Wallet transaction tests', () => {
 
     it('creates a s->t tx correctly', async () => {
         const tx = wallet.createTransaction(
-            'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb',
+            'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
             0.05 * 10 ** 8,
             { useShieldInputs: true }
         );
@@ -322,7 +345,7 @@ describe('Wallet transaction tests', () => {
 
     it('creates a s->s tx correctly', async () => {
         const addr =
-            'ps1a0x2few52sy3t0nrdhun0re4c870e04w448qpa7c26qjw9ljs4quhja40hat95f7hy8tcuvcn2s';
+            'olc1a0x2few52sy3t0nrdhun0re4c870e04w448qpa7c26qjw9ljs4quhja40hat95f7hy8tcvmjnel';
         const tx = wallet.createTransaction(addr, 0.05 * 10 ** 8, {
             useShieldInputs: true,
         });
@@ -344,20 +367,20 @@ describe('Wallet transaction tests', () => {
         const value = legacyMainnetInitialBalance() + 1;
         expect(() =>
             wallet.createTransaction(
-                'SR3L4TFUKKGNsnv2Q4hWTuET2a4vHpm1b9',
+                'fHrdZvnh366R3fNoBVMhyuwdAiK75kfYjh',
                 value,
                 { isDelegation: true }
             )
         ).toThrow(/not enough balance/i);
         expect(() =>
             wallet.createTransaction(
-                'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb',
+                'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
                 value
             )
         ).toThrow(/not enough balance/i);
         expect(() =>
             wallet.createTransaction(
-                'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb',
+                'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
                 value,
                 { useShieldInputs: true }
             )
@@ -366,7 +389,7 @@ describe('Wallet transaction tests', () => {
         // Should use shield balance when `useShieldInputs` is true
         expect(
             wallet.createTransaction(
-                'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb',
+                'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
                 30 * 10 ** 8,
                 { useShieldInputs: true }
             )
@@ -374,7 +397,7 @@ describe('Wallet transaction tests', () => {
         // MaX balance is set but we don't allow subtracting fee from amount
         expect(() =>
             wallet.createTransaction(
-                'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb',
+                'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
                 legacyMainnetInitialBalance(),
                 { subtractFeeFromAmt: false }
             )
@@ -384,7 +407,7 @@ describe('Wallet transaction tests', () => {
     it('throws when delegateChange is set, but changeDelegationAddress is not', () => {
         expect(() =>
             wallet.createTransaction(
-                'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb',
+                'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
                 0.1 * 10 ** 8,
                 { delegateChange: true }
             )

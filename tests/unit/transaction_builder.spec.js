@@ -1,4 +1,4 @@
-import { describe, it } from 'vitest';
+import { beforeEach, describe, it } from 'vitest';
 import {
     COutpoint,
     CTxIn,
@@ -7,8 +7,13 @@ import {
     UTXO,
 } from '../../scripts/transaction.js';
 import { TransactionBuilder } from '../../scripts/transaction_builder.js';
+import { cChainParams } from '../../scripts/chain_params.js';
 
 describe('Transaction builder tests', () => {
+    beforeEach(() => {
+        cChainParams.current = cChainParams.main;
+    });
+
     it('Builds a transaction correctly', () => {
         const txBuilder = TransactionBuilder.create()
             .addUTXO(
@@ -33,11 +38,11 @@ describe('Transaction builder tests', () => {
             ])
             .addOutputs([
                 {
-                    address: 'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb',
+                    address: 'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
                     value: 3,
                 },
                 {
-                    address: 'DShxa9sykpVUYBe2VKZfq9dzE8f2yBbtmg',
+                    address: 'oeSEGPDU79sx42VPZysm3omrj1ZDLpVzmQ',
                     value: 8,
                 },
             ]);
@@ -87,7 +92,7 @@ describe('Transaction builder tests', () => {
     it('builds an exchange tx correctly', () => {
         const tx = TransactionBuilder.create()
             .addOutput({
-                address: 'EXMDbnWT4K3nWfK1311otFrnYLcFSipp3iez',
+                address: 'Hh1oSTdCBZmn6NDrAQxbsfeAMnzrHS4o7YeD',
                 value: 1,
             })
             .addUTXO(
@@ -126,7 +131,7 @@ describe('Transaction builder tests', () => {
         const tx = TransactionBuilder.create()
             .addOutput({
                 address:
-                    'ps1kw7d704cpvy4f5e5usk3xhykytxnjfk872fpty7ct6znvmdepsxq4s90p9a3arg0qg8tzjk7vkn',
+                    'olc1kw7d704cpvy4f5e5usk3xhykytxnjfk872fpty7ct6znvmdepsxq4s90p9a3arg0qg8tzzp5v9u',
                 value: 1000,
                 memo: 'Super secret memo',
             })
@@ -137,7 +142,7 @@ describe('Transaction builder tests', () => {
                 shieldOutput: [
                     {
                         address:
-                            'ps1kw7d704cpvy4f5e5usk3xhykytxnjfk872fpty7ct6znvmdepsxq4s90p9a3arg0qg8tzjk7vkn',
+                            'olc1kw7d704cpvy4f5e5usk3xhykytxnjfk872fpty7ct6znvmdepsxq4s90p9a3arg0qg8tzzp5v9u',
                         value: 1000,
                         memo: 'Super secret memo',
                     },
@@ -149,7 +154,7 @@ describe('Transaction builder tests', () => {
     it('builds a s->t transaction correctly', () => {
         const tx = TransactionBuilder.create()
             .addOutput({
-                address: 'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb',
+                address: 'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
                 value: 3,
             })
             .build();
@@ -180,7 +185,7 @@ describe('Transaction builder tests', () => {
             )
             .addOutput({
                 address:
-                    'ps1kw7d704cpvy4f5e5usk3xhykytxnjfk872fpty7ct6znvmdepsxq4s90p9a3arg0qg8tzjk7vkn',
+                    'olc1kw7d704cpvy4f5e5usk3xhykytxnjfk872fpty7ct6znvmdepsxq4s90p9a3arg0qg8tzzp5v9u',
                 value: 1000,
             })
             .build();
@@ -190,7 +195,7 @@ describe('Transaction builder tests', () => {
                 shieldOutput: [
                     {
                         address:
-                            'ps1kw7d704cpvy4f5e5usk3xhykytxnjfk872fpty7ct6znvmdepsxq4s90p9a3arg0qg8tzjk7vkn',
+                            'olc1kw7d704cpvy4f5e5usk3xhykytxnjfk872fpty7ct6znvmdepsxq4s90p9a3arg0qg8tzzp5v9u',
                         value: 1000,
                         memo: '',
                     },
@@ -212,7 +217,7 @@ describe('Transaction builder tests', () => {
         const txBuilder = TransactionBuilder.create();
         expect(() =>
             txBuilder.addOutput({
-                address: 'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bc',
+                address: 'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkR',
                 value: 5,
             })
         ).toThrow(/address/);

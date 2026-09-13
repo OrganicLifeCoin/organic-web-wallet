@@ -13,25 +13,21 @@ import { registerWorker } from './native.js';
 import { getEventEmitter } from './event_bus.js';
 import { checkForUpgrades } from './changelog.js';
 import { createApp } from 'vue';
-import Dashboard from './dashboard/Dashboard.vue';
 import Alerts from './alerts/Alerts.vue';
 import { loadDebug, debugLog, DebugTopics, debugError } from './debug.js';
-import Stake from './stake/Stake.vue';
-import MasternodeComponent from './masternode/Masternode.vue';
-import Governance from './governance/Governance.vue';
+import PQWallet from './pqwallet/PQWallet.vue';
 import { createPinia } from 'pinia';
 import { cOracle } from './prices.js';
 
 import pIconCheck from '../assets/icons/icon-check.svg';
 import SideNavbar from './SideNavbar.vue';
-import MultiWallet from './dashboard/MultiWallet.vue';
 import { AsyncInterval } from './async_interval.js';
 import { useNetwork } from './composables/use_network.js';
 
-/** A flag showing if base OLCWallet is fully loaded or not */
+/** A flag showing if base MPW is fully loaded or not */
 export let fIsLoaded = false;
 
-/** A getter for the flag showing if base OLCWallet is fully loaded or not */
+/** A getter for the flag showing if base MPW is fully loaded or not */
 export function isLoaded() {
     return fIsLoaded;
 }
@@ -43,12 +39,18 @@ export let doms = {};
 
 const pinia = createPinia();
 
-export const dashboard = createApp(Dashboard).use(pinia).mount('#DashboardTab');
-createApp(Stake).use(pinia).mount('#StakingTab');
-createApp(MasternodeComponent).use(pinia).mount('#Masternode');
-createApp(Governance).use(pinia).mount('#Governance');
+// Compatibility stub: the legacy Dashboard is no longer mounted. Settings
+// flows that still reference it become no-ops instead of throwing.
+export const dashboard = {
+    restoreWallet: async () => false,
+    changePassword: () => true,
+};
+
+// The legacy Dashboard, MultiWallet and Stake/Masternode/Governance screens
+// are no longer mounted: they remain importable for dormant modules, but no
+// legacy wallet UI is ever rendered.
+createApp(PQWallet).use(pinia).mount('#PQWallet');
 createApp(SideNavbar).use(pinia).mount('#SideNavbar');
-createApp(MultiWallet).use(pinia).mount('#MultiWallet');
 createApp(Alerts).use(pinia).mount('#Alerts');
 
 export async function start() {
@@ -56,8 +58,7 @@ export async function start() {
         domLightBackground: document.getElementById('page-container-light'),
         domNavbar: document.getElementById('navbar'),
         domNavbarToggler: document.getElementById('navbarToggler'),
-        domDashboard: document.getElementById('dashboard'),
-        domStakeTab: document.getElementById('stakeTab'),
+        domPqTab: document.getElementById('pqTab'),
         domModalQR: document.getElementById('ModalQR'),
         domModalQrLabel: document.getElementById('ModalQRLabel'),
         domModalQrReceiveTypeBtn: document.getElementById(
@@ -157,6 +158,12 @@ export async function start() {
         domPageContainer: document.getElementById('page-container'),
     };
 
+    // Reveal the default UI immediately. Startup below awaits i18n, image
+    // loading and network data; a slow or failed call must never leave the
+    // loading screen up.
+    fIsLoaded = true;
+    doms.domPqTab?.click();
+
     initializeThemeMode();
 
     // Set Copyright year on footer
@@ -221,7 +228,7 @@ export async function start() {
         // Refresh blockchain data
         await refreshChainData();
 
-        // Fetch the OLC prices
+        // Fetch the PIVX prices
         await refreshPriceDisplay();
     }, 15000);
 
@@ -232,10 +239,6 @@ export async function start() {
     getEventEmitter().on('wallet-import', async () => {
         updateLogOutButton();
     });
-    fIsLoaded = true;
-
-    // If we haven't already (due to having no wallet, etc), display the Dashboard
-    doms.domDashboard.click();
 }
 
 async function refreshPriceDisplay() {
@@ -283,7 +286,7 @@ function subscribeToNetworkEvents() {
  * @param {string} tabName - The name of the tab to load
  */
 export function openTab(evt, tabName) {
-    // Only allow switching tabs if OLC Wallet is loaded
+    // Only allow switching tabs if MPw is loaded
     if (!isLoaded()) return;
 
     // Hide all screens and deactivate link highlights
@@ -334,7 +337,7 @@ export function optimiseCurrencyLocale(nAmount) {
 
 async function loadImages() {
     const images = [
-        ['olc-wallet-main-logo', import('../assets/logo.png')],
+        ['mpw-main-logo', import('../assets/logo.png')],
         ['plus-icon2', import('../assets/icons/icon-plus.svg')],
         ['plus-icon3', import('../assets/icons/icon-plus.svg')],
         ['del-wallet-icon', import('../assets/icons/icon-bin.svg')],
@@ -429,6 +432,11 @@ export function toClipboard(source, caller) {
 export async function accessOrImportWallet() {
     // Hide and Reset the Vanity address input
 
+    // The legacy import/access UI is no longer mounted: become a no-op.
+    if (!doms.domImportWallet || !doms.domPrivKey || !doms.domAccessWalletBtn) {
+        return;
+    }
+
     // Show Import button, hide access button
     doms.domImportWallet.style.display = 'block';
     setTimeout(() => {
@@ -450,6 +458,8 @@ export async function accessOrImportWallet() {
 
 /** Update the log out button to match the current wallet state */
 export function updateLogOutButton() {
+    // The legacy wallet UI is no longer mounted: nothing to update.
+    if (!doms.domLogOutContainer) return;
     doms.domLogOutContainer.style.display = activeWallet.isLoaded()
         ? 'block'
         : 'none';
@@ -557,9 +567,13 @@ function getSettingsPages() {
  */
 export function switchSettings(page) {
     const SETTINGS = getSettingsPages();
-    const { btn, section } = SETTINGS[page];
+    const target = SETTINGS[page];
+    // The section may be unmounted (e.g. the legacy wallet settings).
+    if (!target?.btn || !target?.section) return;
+    const { btn, section } = target;
 
     Object.values(SETTINGS).forEach(({ section, btn }) => {
+        if (!section || !btn) return;
         // Set the slider to the proper location
         if (page === 'display') {
             doms.domDisplayDecimalsSlider.oninput = function () {
@@ -590,6 +604,8 @@ export function switchSettings(page) {
 }
 
 export async function resync() {
+    // The legacy wallet UI is no longer mounted: nothing to resync.
+    if (!doms.domLogOutContainer) return;
     if (activeWallet.isSynced) {
         createAlert('info', translation.resyncing);
         await activeWallet.resync();

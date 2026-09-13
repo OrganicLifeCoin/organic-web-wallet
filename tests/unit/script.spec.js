@@ -1,16 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect } from 'vitest';
 import { getAddressFromHash } from '../../scripts/script.js';
 import { hexToBytes } from '../../scripts/utils.js';
+import { cChainParams } from '../../scripts/chain_params.js';
 
 describe('getAddressFromHash tests', () => {
+    beforeEach(() => {
+        cChainParams.current = cChainParams.testnet;
+    });
+
     it.each([
         [
             '85ef00b1d1cc9dd26d7b72c65dadb9f39b99cae5',
-            'DHMGiyJVH4RzZzr1r4wTYxUVyrxz5iyYF4',
+            'tK8nEWDS9ZNyu3NRDmFNb7sp2nxV6zS5Tr',
         ],
         [
             'af05ca21d06b09c8387d236cdc247864a530b618',
-            'DM6Xj6WH67iQXPwooj577nNeHqK77sKQVg',
+            'tNt3EdRDxcfPrSUDBRP29wmxLmJc5NHSy3',
         ],
     ])('gets addresses from hash (pubkeyhash)', (hash, address) => {
         expect(
@@ -22,11 +27,11 @@ describe('getAddressFromHash tests', () => {
     it.each([
         [
             'b3be8567d0190c67ca4675a0019089c55fe695f9',
-            'SdgQDpS8jDRJDX8yK8m9KnTMarsE84zdsy',
+            'xp2e4xnjykB1Z2bU9bk3hBsMnhByQY4yJM',
         ],
         [
             '5adc52d17be1fbcd5fe1c195e6aa9ae1520deb51',
-            'SVaRnTBvR52iEDq6j9WjGVPVjWKgXdZNzj',
+            'xfvfdbYXfbnRZjHbZcVddtoVwLeRtBRUgE',
         ],
     ])('gets addresses from hash (coldaddress)', (hash, address) => {
         expect(
@@ -36,7 +41,7 @@ describe('getAddressFromHash tests', () => {
     it.each([
         [
             '0c25f1c431a0af6aa31e6d2c54fc582bc4be3e41',
-            'EXMC7vxQLd5jESjTvwwgzDjf3fvSpyZ7f6TK',
+            'RXg6CpqXq2pd2nA8PfsBnKG6mBpAZGcGxYyQ',
         ],
     ])('gets addresses from hash (exchangeaddress)', (hash, address) => {
         expect(

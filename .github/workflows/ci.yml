@@ -31,8 +31,14 @@ jobs:
       - name: Check the wallet image dependency order
         run: tests/dockerfile.test.sh
 
-      - name: Run OLC regression checks
-        run: npm run test:olc
+      - name: Check repository hygiene
+        run: bash tests/repository-hygiene.test.sh
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=low
+
+      - name: Run the complete test suite
+        run: npm test -- --run
 
       - name: Build the production wallet
         run: npm run build

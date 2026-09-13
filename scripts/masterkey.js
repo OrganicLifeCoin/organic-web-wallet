@@ -1,4 +1,4 @@
-import HDKey from 'hdkey';
+import { HDKey } from '@scure/bip32';
 import { bytesToHex } from './utils.js';
 import { LedgerController } from './ledger.js';
 import { cChainParams } from './chain_params.js';

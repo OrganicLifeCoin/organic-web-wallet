@@ -3,31 +3,22 @@
 /* eslint @typescript-eslint/no-var-requires: "off" */
 
 import path from 'path';
-import webpack from 'webpack';
 import HtmlWebpackPlugin from 'html-webpack-plugin';
-import NodePolyfillPlugin from 'node-polyfill-webpack-plugin';
 import MiniCssExtractPlugin from 'mini-css-extract-plugin';
 import CopyPlugin from 'copy-webpack-plugin';
-import PreloadWebpackPlugin from '@vue/preload-webpack-plugin';
 import toml from 'toml';
 import { VueLoaderPlugin } from 'vue-loader';
 
-import { readFileSync } from 'fs';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Inject the Changelog and Version to the app
-const changelog = readFileSync('./changelog.md', { encoding: 'utf8' });
-
 export default {
-    entry: './scripts/index.js',
+    entry: './scripts/pqwallet/entry.js',
     output: {
         path: path.resolve(__dirname, './dist'),
         filename: './olc-wallet.js',
-        library: 'OLCWallet',
-        libraryTarget: 'var',
         clean: true,
     },
     devtool: 'source-map',
@@ -89,10 +80,7 @@ export default {
         ],
     },
     resolve: {
-        fallback: {
-            fs: false,
-            crypto: path.resolve(__dirname, 'scripts/polyfills/crypto.js'),
-        },
+        fallback: { fs: false },
     },
     plugins: [
         new HtmlWebpackPlugin({
@@ -106,46 +94,13 @@ export default {
             },
         }),
         new VueLoaderPlugin(),
-        // Polyfill for non web libraries
-        new NodePolyfillPlugin({
-            includeAliases: ['stream', 'process', 'Buffer'],
-        }),
-        // Prevents non styled flashing on load
         new MiniCssExtractPlugin(),
-        // Make jquery available globally
-        new webpack.ProvidePlugin({
-            $: 'jquery',
-            jQuery: 'jquery',
-            'window.jQuery': 'jquery',
-        }),
-        // Make the Changelog available globally
-        new webpack.DefinePlugin({
-            CHANGELOG: JSON.stringify(changelog),
-        }),
-        // Ignore non english bip39 wordlists
-        new webpack.IgnorePlugin({
-            resourceRegExp: /^\.\/wordlists\/(?!english)/,
-            contextRegExp: /bip39\/src$/,
-        }),
-        // Ignore countries-intl
-        new webpack.IgnorePlugin({
-            resourceRegExp: /countries-intl.json$/,
-        }),
-        // Copy static web-facing files
         new CopyPlugin({
             patterns: [
                 { from: 'manifest.json' },
                 { from: 'assets/icons' },
                 { from: 'assets/logo_opaque-dark-bg.png' },
-                { from: 'scripts/native-worker.js' },
             ],
-        }),
-        new PreloadWebpackPlugin({
-            // This is something made up, it's just to get the
-            // bundle name in the service worker
-            rel: 'serviceworkprefetch',
-            include: 'all',
-            fileWhitelist: [/\.wasm$/, /(pivx-shield|util)/],
         }),
     ],
 };

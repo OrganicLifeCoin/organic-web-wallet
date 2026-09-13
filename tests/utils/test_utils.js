@@ -5,6 +5,7 @@ import {
 } from '../../scripts/masterkey.js';
 import { Wallet } from '../../scripts/wallet.js';
 import { Mempool } from '../../scripts/mempool.js';
+import { cChainParams } from '../../scripts/chain_params.js';
 import { vi } from 'vitest';
 
 export function getLegacyMainnet() {
@@ -59,6 +60,7 @@ export function legacyMainnetInitialBalance() {
  * @returns {Promise<Wallet>}
  */
 export async function setUpLegacyMainnetWallet() {
+    cChainParams.current = cChainParams.main;
     // TODO: legacy wallets shouldn't have shield, make includeShield = false and rewrite some tests
     const wallet = await setUpWallet(getLegacyMainnet(), true);
 
@@ -77,6 +79,7 @@ export async function setUpLegacyMainnetWallet() {
  * @returns{Promise<Wallet>}
  */
 export async function setUpHDMainnetWallet(includeShield) {
+    cChainParams.current = cChainParams.main;
     const wallet = await setUpWallet(getHDMainnet(), includeShield);
 
     // sanity check on the balance

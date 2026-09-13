@@ -26,7 +26,7 @@ describe('Wallet signature tests', () => {
 
     it('throws when is view only', async () => {
         wallet.wipePrivateData();
-        expect(wallet.sign({})).rejects.toThrow(/view only/i);
+        await expect(wallet.sign({})).rejects.toThrow(/view only/i);
     });
     it('signs a transaction correctly', async () => {
         const tx = new Transaction();
@@ -79,7 +79,8 @@ describe('Wallet signature tests', () => {
             address: 'ptest1234567',
             amount: 100000,
             blockHeight: 1504904,
-            transparentChangeAddress: 'DTSTGkncpC86sbEUZ2rCBLEe2aXSeZPLnC',
+            memo: undefined,
+            transparentChangeAddress: 'ofAixz87AXWaPS5qdhAHPzNWXTRd2nDdHN',
             useShieldInputs: true, // Because vin is empty
             utxos: [
                 {
@@ -111,10 +112,11 @@ describe('Wallet signature tests', () => {
         const txRef = await wallet.sign(tx);
         expect(txRef).toBe(tx);
         expect(PIVXShield.prototype.createTransaction).toHaveBeenCalledWith({
-            address: 'DTSTGkncpC86sbEUZ2rCBLEe2aXSeZPLnC',
+            address: 'ofAixz87AXWaPS5qdhAHPzNWXTRd2nDdHN',
             amount: 4992400,
             blockHeight: 1504904,
-            transparentChangeAddress: 'DTSTGkncpC86sbEUZ2rCBLEe2aXSeZPLnC',
+            memo: undefined,
+            transparentChangeAddress: 'ofAixz87AXWaPS5qdhAHPzNWXTRd2nDdHN',
             useShieldInputs: true, // Because vin is empty
             utxos: [
                 {
@@ -157,7 +159,8 @@ describe('Wallet signature tests', () => {
             address: 'ptest1234567',
             amount: 100000,
             blockHeight: 1504904,
-            transparentChangeAddress: 'DTSTGkncpC86sbEUZ2rCBLEe2aXSeZPLnC',
+            memo: undefined,
+            transparentChangeAddress: 'ofAixz87AXWaPS5qdhAHPzNWXTRd2nDdHN',
             useShieldInputs: false,
             utxos: [
                 {

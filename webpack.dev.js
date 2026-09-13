@@ -45,12 +45,9 @@ export default merge(common, {
         proxy: [
             {
                 context: [
-                    '/oracle',
-                    '/mainnet',
                     '/testnet',
                     '/api',
-                    '/sapling-output.params',
-                    '/sapling-spend.params',
+                    '/tx',
                 ],
                 target: 'https://organiclife.coin',
                 changeOrigin: true,

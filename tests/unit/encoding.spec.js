@@ -6,7 +6,7 @@ import {
     bytesToNum,
     varIntToNum,
 } from '../../scripts/encoding.js';
-import { describe, it, test, expect } from 'vitest';
+import { beforeEach, describe, it, test, expect } from 'vitest';
 import {
     isColdAddress,
     isExchangeAddress,
@@ -17,21 +17,25 @@ import {
 import { cChainParams } from '../../scripts/chain_params.js';
 
 describe('parse WIF tests', () => {
+    beforeEach(() => {
+        cChainParams.current = cChainParams.testnet;
+    });
+
     it('Parses WIF correctly', () => {
         expect(
-            parseWIF('YU12G8Y9LwC3wb2cwUXvvg1iMvBey1ibCF23WBAapCuaKhd6a4R6')
+            parseWIF('cW6uViWJU7fUUsB44CDaVN3mKe7dAM3Jun8NHUajT3kgavFx91me')
         ).toStrictEqual(
             new Uint8Array([
-                181, 66, 141, 90, 213, 58, 137, 158, 160, 57, 109, 252, 51, 227,
-                221, 192, 8, 4, 223, 42, 42, 8, 191, 7, 251, 231, 167, 119, 54,
-                161, 194, 229,
+                254, 60, 197, 153, 164, 198, 53, 142, 244, 155, 71, 44, 96,
+                5, 195, 133, 140, 205, 48, 232, 157, 152, 118, 173, 49, 41,
+                118, 47, 175, 196, 232, 82,
             ])
         );
     });
     it('Throws when network is wrong', () => {
         expect(() =>
-            parseWIF('cW6uViWJU7fUUsB44CDaVN3mKe7dAM3Jun8NHUajT3kgavFx91me')
-        ).toThrow(/testnet/i);
+            parseWIF('7mAinBMv7GC6DApLapcnycDNoMdiZ8SC1TzH4KJmpJ3iJRQqcd4S')
+        ).toThrow(/mainnet/i);
     });
 });
 
@@ -119,19 +123,23 @@ describe('num to bytes tests', () => {
 });
 
 describe('Address validation', () => {
+    beforeEach(() => {
+        cChainParams.current = cChainParams.testnet;
+    });
+
     const addresses = [
-        { addr: 'DSxfioagfTXeCX1teMQNbWnzqWkz5mZNtH', desc: 'p2pkh' },
-        { addr: 'EXMDbnWT4K3nWfK1311otFrnYLcFSipp3iez', desc: 'exc' },
-        { addr: 'SbqnpKgFRm1zPLHQRRuvuUH4Tyc6Em53xt', desc: 'cold' },
+        { addr: 'tUkBELVdXxUdXZYJ23iHdgCJtSkV4NcX1z', desc: 'p2pkh' },
+        { addr: 'RXg7ggPaYingJzjfViwJgMPEFrVyB1oznsNC', desc: 'exc' },
+        { addr: 'xnC2fU2rgHmhiqjuFttqGsh4fovqa4PKCj', desc: 'cold' },
         {
-            addr: 'ps10g8s4f87fc787e8nzw65men80kqsdmem4uu3yj6zer3uz7ya4m2fjnvc9l5f3009ur6kszfjp34',
+            addr: 'tolc10g8s4f87fc787e8nzw65men80kqsdmem4uu3yj6zer3uz7ya4m2fjnvc9l5f3009ur6kskk0agc',
             desc: 'shield',
         },
-        { addr: 'DSxfioagfTUeCX1teMQNbWnzqWkz5mZNtH', desc: 'invalid' },
-        { addr: 'EXMDbnWT4K3nWfK2311otFrnYLcFSipp3iez', desc: 'invalid' },
-        { addr: 'SbqnpKgFRm1zPLHQRRuvuUh4Tyc6Em53xt', desc: 'invalid' },
+        { addr: 'tUkBELVdXxUdXZYJ23iHdgCJtSkV4NcX1Z', desc: 'invalid' },
+        { addr: 'RXg7ggPaYingJzjfViwJgMPEFrVyB1oznsNc', desc: 'invalid' },
+        { addr: 'xnC2fU2rgHmhiqjuFttqGsh4fovqa4PKCJ', desc: 'invalid' },
         {
-            addr: 'ps10g8s4f87fc78788nzw65men80kqsdmem4uu3yj6zer3uz7ya4m2fjnvc9l5f3009ur6kszfjp34',
+            addr: 'tolc10g8s4f87fc78788nzw65men80kqsdmem4uu3yj6zer3uz7ya4m2fjnvc9l5f3009ur6kskk0agc',
             desc: 'invalid',
         },
     ];

@@ -11,7 +11,7 @@ import {
     resetNetwork,
 } from '../../../scripts/network/__mocks__/network_manager.js';
 import { refreshChainData } from '../../../scripts/global.js';
-import { COIN } from '../../../scripts/chain_params.js';
+import { COIN, cChainParams } from '../../../scripts/chain_params.js';
 import { flushPromises } from '@vue/test-utils';
 import { HistoricalTxType } from '../../../scripts/historical_tx.js';
 import { Database } from '../../../scripts/database.js';
@@ -71,7 +71,7 @@ describe('Fresh wallet sync guards', () => {
             nAccount: 0,
             mempool: new Mempool(),
             masterKey: new LegacyMasterKey({
-                address: 'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb',
+                address: 'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
             }),
         });
 
@@ -101,7 +101,7 @@ describe('Wallet sync tests', () => {
 
     it('Basic 2 wallets sync test', async () => {
         // --- Verify that funds are received after sending a transaction ---
-        // The legacy wallet sends the HD wallet 0.05 PIVs
+        // The legacy wallet sends the HD wallet 0.05 OLC
         await createAndSendTransaction(
             walletLegacy,
             walletHD.getCurrentAddress(),
@@ -127,7 +127,7 @@ describe('Wallet sync tests', () => {
     it('MAX_ACCOUNT_GAP is respected', async () => {
         // --- Verify that MAX_ACCOUNT_GAP is respected ---
         // at this point the HD wallet has only 1 UTXO received at path .../0
-        let path = "m/44'/119'/0'/0/0";
+        let path = `m/44'/${cChainParams.current.BIP44_TYPE}'/0'/0/0`;
         let nAddress = 0;
         // So according to BIP32 standard
         // wallets must be aware of addresses up to nAddress + MAX_ACCOUNT_GAP
@@ -149,14 +149,14 @@ describe('Wallet sync tests', () => {
     it('recognizes immature balance', async () => {
         const globalNetWork = getNetwork();
         const watchOnlyWallet = await getWalletFromAddress(
-            'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb'
+            'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr'
         );
         // Starting point: the wallet might have some initial balance that we don't really care
         const initBalance = watchOnlyWallet.balance;
         const initImmatureBalance = watchOnlyWallet.immatureBalance;
         const initialColdBalance = watchOnlyWallet.coldBalance;
 
-        // At this point superblock happens... and people decided to fund 20k PIVs to a cat
+        // At this point superblock happens... and people decided to fund 20k OLC to a cat
         const superblockTx =
             '01000000012f4c0d09d96acce3e6f3dbb3d076bd5e13aae0a8cd79825fd31c81ec00bbfdba010000004847304402205d80a436187e90a416d0f30d39de8e47d2edbedf9af0bafcb1e117d4eac636e40220486914efa286caf31479f6e1d28ad82eed05acaa32b5925589682990760925e001ffffffff030000000000000000001d29131125000000232102c9461a4648cf10d61da673feb4486ee0ba9a3f62810364ff2a509a58be58a5a4ac00204aa9d10100001976a914a95cc6408a676232d61ec29dc56a180b5847835788ac00000000';
         let superblockProfit = 20000 * COIN;

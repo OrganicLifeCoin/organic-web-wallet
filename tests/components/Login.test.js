@@ -6,11 +6,12 @@ import VanityGen from '../../scripts/dashboard/VanityGen.vue';
 import AccessWallet from '../../scripts/dashboard/AccessWallet.vue';
 import { vi, describe } from 'vitest';
 
+vi.mock('../../scripts/i18n.js');
+
 describe('Login tests', () => {
     beforeEach(() => {
-        vi.mock('../../scripts/i18n.js');
         navigator.usb = {};
-        return vi.clearAllMocks;
+        vi.clearAllMocks();
     });
     test('Create wallet login (no advanced)', async () => {
         const wrapper = shallowMount(Login, {
@@ -84,7 +85,7 @@ describe('Login tests', () => {
             ],
         ]);
     });
-    test('Vanity gen login', async () => {
+    test('does not expose the legacy vanity generator', async () => {
         const wrapper = shallowMount(Login, {
             props: {
                 advancedMode: false,
@@ -92,18 +93,8 @@ describe('Login tests', () => {
             attachTo: document.getElementById('app'),
         });
         expect(wrapper.emitted('import-wallet')).toBeUndefined();
-        const vanityGenComponent = wrapper.findComponent(VanityGen);
-        // Create Wallet component must be visible
-        expect(vanityGenComponent.isVisible()).toBeTruthy();
-        // Vanity gen is easy: it has no props
-        expect(vanityGenComponent.props()).toStrictEqual({});
-        // We can just emit a complete random event: VanityGen has already been unit tested!
-        vanityGenComponent.vm.$emit('import-wallet', 'mySecret', 'mywallet');
-        // Make sure the Login component relays the right event
-        expect(wrapper.emitted('import-wallet')).toHaveLength(1);
-        expect(wrapper.emitted('import-wallet')).toStrictEqual([
-            [{ secret: 'mySecret', type: 'legacy', label: 'mywallet' }],
-        ]);
+        expect(wrapper.findComponent(VanityGen).exists()).toBe(false);
+        expect(wrapper.emitted('import-wallet')).toBeUndefined();
     });
     test('Access wallet login (no advanced)', async () => {
         const wrapper = shallowMount(Login, {

@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 import ProposalCreateModal from '../../../scripts/governance/ProposalCreateModal.vue';
 import { defineComponent, h, nextTick } from 'vue';
+import { cChainParams } from '../../../scripts/chain_params.js';
 
 vi.stubGlobal(
     'Teleport',
@@ -13,6 +14,10 @@ vi.stubGlobal(
 );
 
 describe('ProposalCreateModal component tests', () => {
+    beforeEach(() => {
+        cChainParams.current = cChainParams.main;
+    });
+
     it('hides address input when advanced mode is false', async () => {
         const wrapper = mount(ProposalCreateModal, {
             props: { advancedMode: true, show: true },
@@ -55,7 +60,7 @@ describe('ProposalCreateModal component tests', () => {
         await nextTick();
         // Nothing should be emitted because address is wrong
         expect(wrapper.emitted().create).toBeUndefined();
-        await address.setValue('GT9FZJqN5XRHYr4TX2RKsU84BREPSey7BV');
+        await address.setValue('oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr');
         await proposalSubmit.trigger('click');
         await nextTick();
         // Confirm the submission
@@ -69,7 +74,7 @@ describe('ProposalCreateModal component tests', () => {
                 'https://proposal.com/',
                 3,
                 20,
-                'GT9FZJqN5XRHYr4TX2RKsU84BREPSey7BV',
+                'oYJsZzEUchBLpvAWz5mSQuEFJRGiXKmGkr',
             ],
         ]);
         await wrapper.setProps({ advancedMode: false });

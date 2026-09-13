@@ -20,7 +20,7 @@ function getHdKeyByXpub(testnet = false) {
     return new HdMasterKey({
         xpub: testnet
             ? 'xpub6BsLmaiXvY1vKDpkVv39aqWHVJYiL7ft9LS1SKwJRzv7UW5gGRCMMqBSJsqJPVQuV6k6aa8Zt8vidVTdTJotHGzaaEqFag9bMwbNWHfW86q'
-            : 'xpub6D5vhgPg8E8gykS6mHhquBey5bVRmu96xedXKqcm2wNY2orePTj2oBtkgAGvm75jCNTNvRPXtXM7Kbi5trEQ4YGyqf4STGVm4pD62w1zgzM',
+            : 'xpub6DNoFNa7ZgGwSgZxjq2gdytTKHN3zkfpnyqnFVEftZS4bE4ZyAsr1LHNugFJZXwxd9PRXziKC8L3SDY6fprACvD1LebDj3WcqXPfiYyXs6d',
     });
 }
 
@@ -30,16 +30,14 @@ describe('mainnet tests', () => {
     });
     test('Legacy master key', async () => {
         const l = getLegacyMainnet();
-        expect(await l.getAddress()).toBe('DTSTGkncpC86sbEUZ2rCBLEe2aXSeZPLnC');
+        expect(await l.getAddress()).toBe('ofAixz87AXWaPS5qdhAHPzNWXTRd2nDdHN');
         expect(await l.getKeyToExport()).toBe(
-            'DTSTGkncpC86sbEUZ2rCBLEe2aXSeZPLnC'
+            'ofAixz87AXWaPS5qdhAHPzNWXTRd2nDdHN'
         );
         expect(l.keyToBackup).toBe(
-            'YU12G8Y9LwC3wb2cwUXvvg1iMvBey1ibCF23WBAapCuaKhd6a4R6'
+            '7mAinBMv7GC6DApLapcnycDNoMdiZ8SC1TzH4KJmpJ3iJRQqcd4S'
         );
-        expect(async () => {
-            l.getxpub();
-        }).rejects.toThrow(/extended public key/i);
+        expect(() => l.getxpub()).toThrow(/extended public key/i);
     });
 
     test('Hd keys basic properties', async () => {
@@ -60,7 +58,7 @@ describe('mainnet tests', () => {
         const pu = getHdKeyByXpub();
 
         expect(s.getKeyToExport(0)).toBe(
-            'xpub6D5vhgPg8E8gykS6mHhquBey5bVRmu96xedXKqcm2wNY2orePTj2oBtkgAGvm75jCNTNvRPXtXM7Kbi5trEQ4YGyqf4STGVm4pD62w1zgzM'
+            'xpub6DNoFNa7ZgGwSgZxjq2gdytTKHN3zkfpnyqnFVEftZS4bE4ZyAsr1LHNugFJZXwxd9PRXziKC8L3SDY6fprACvD1LebDj3WcqXPfiYyXs6d'
         );
         expect(s.getKeyToExport(0)).toBe(pr.getKeyToExport(0));
         expect(s.getKeyToExport(0)).toBe(pu.getKeyToExport(0));
@@ -81,25 +79,25 @@ describe('mainnet tests', () => {
         // Map nth account -> first 5 addresses
         const addresses = {
             0: [
-                'DR658aDrQviYy3rDUGM1Mzzi12WHwqQDpE',
-                'DDdiX27tHmaaZqFHXkz1SnnmK81DzFJVca',
-                'DEMqSgPEvqGAhWvq11oVymyLT6aJK5NQNx',
-                'DFzV4XA2KdQJx4oYJw97VoSxN21xNvqwBc',
-                'DCrtxnTx7UFtx1HfKLVNFXmKvcdcoepQh1',
+                'oHtL3qBPDG3SHwNpAFMVDikgFDTQf7mAWs',
+                'oXvT8hz58mYygTPGx7zmY2JEDtauoK59qy',
+                'odDMmtrJAUef6da56D6DXJhEaAMjd5Rov8',
+                'oJuDU1zAxXYyCbWjRixDkrjP8yfsiK3Shr',
+                'og3fv3dUMJAx9dXZmueGs72KQaTf2WtkLh',
             ],
             1: [
-                'DF9Q8himXERhrqwUq4pGQkSkunkRXJiMLk',
-                'DAhRJMT3u3dF5Y1QDBoBQq9fDLRNonW68z',
-                'DM7hXW79nCf9FjcF8aH5oAFYfRTSQD5sck',
-                'DMQRXhooJcFwE8tgnMsQBfrc4BQD2UBKd8',
-                'D6nhBBnAzBhHpaqAxmiJDMph8HByM92ovX',
+                'oebGUDGt9i3ASheoy1SqKAtHwsmmBm6FTQ',
+                'oK7gjK6F7pRQqn4EcTcyzebGK7QLBMhdn3',
+                'oHYPE25dva4iU3jiMLWQ9bQHygt67YN59Y',
+                'odYsQ28anUvgrEQd1rFM8MtrhkEaUyWq54',
+                'oPM8N6yZF183KKYak45GxG1WnFLPg5jTTe',
             ],
             2: [
-                'DFEDsA5WfRSrv5FEcHtUs9u1xdksxiLYkC',
-                'DN2Nj8KHyo4fP4bshXemoYfMhX7cJpE8xq',
-                'DRtGvuVRFhdHtNs2skFWT52cWNN6BuPJM2',
-                'D5dfPtyZp1Bh9pyEutSL43kcw2YEBhjwLf',
-                'DT6Wn5rRq2fsKfMS4cdvq9EiUPwT2SGpmV',
+                'oRxft51uh99qKZhPxaMsYkAEuCuiDGJd8k',
+                'oPjSVgXYjW8RD45ePiW4dk7gHBoSSDjEhg',
+                'oMwRkuNQBWmwB36y2GFnUoRa9ShCwwtNBB',
+                'oT68TiVBwwixFnykAzEd1zxNLqKCBVKABo',
+                'ofJXwDr8a5rGVU4ApB8ANrfyiDVZg9vmvT',
             ],
         };
         for (const key of keys) {
@@ -122,14 +120,14 @@ describe('mainnet tests', () => {
     });
     test('Correct Base58Check validation of addresses', () => {
         const arrTestAddresses = [
-            'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb', // VALID
-            'tLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb', // BAD
-            'TLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb', // BAD
-            'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4BB', // BAD
-            'DLabs  zGMnsK5K9uRTMCF6NoYNY6ET4Bb', // BAD
+            'ofAixz87AXWaPS5qdhAHPzNWXTRd2nDdHN', // VALID
+            'tfAixz87AXWaPS5qdhAHPzNWXTRd2nDdHN', // BAD
+            'DfAixz87AXWaPS5qdhAHPzNWXTRd2nDdHN', // BAD
+            'ofAixz87AXWaPS5qdhAHPzNWXTRd2nDdHn', // BAD
+            'ofAi  z87AXWaPS5qdhAHPzNWXTRd2nDdHN', // BAD
             'i55j', // BAD
             '', // BAD
-            'yJ9zhqrwEj7VAjxJZEWqEEtoWQaHK2NKye', // BAD (Testnet Address)
+            'tVEPsY5AgrQJ4kG4j2TxRRYFwnh4BSkhZR', // BAD (Testnet Address)
         ];
 
         // Test verifying each address and expect that each of them follow the above validity table
@@ -148,16 +146,14 @@ describe('testnet tests', () => {
     });
     test('Legacy master key', async () => {
         const l = getLegacyTestnet();
-        expect(await l.getAddress()).toBe('yKHdgqedD1xosww724TnEvohVqnNp4S3pP');
+        expect(await l.getAddress()).toBe('tVEPsY5AgrQJ4kG4j2TxRRYFwnh4BSkhZR');
         expect(await l.getKeyToExport()).toBe(
-            'yKHdgqedD1xosww724TnEvohVqnNp4S3pP'
+            'tVEPsY5AgrQJ4kG4j2TxRRYFwnh4BSkhZR'
         );
         expect(l.keyToBackup).toBe(
             'cW6uViWJU7fUUsB44CDaVN3mKe7dAM3Jun8NHUajT3kgavFx91me'
         );
-        expect(async () => {
-            await l.getxpub();
-        }).rejects.toThrow(/extended public key/i);
+        expect(() => l.getxpub()).toThrow(/extended public key/i);
     });
     test('Hd master key are all the same', async () => {
         const s = await getHdKeyBySeed();
@@ -187,25 +183,25 @@ describe('testnet tests', () => {
         // Map nth account -> first 5 addresses
         const addresses = {
             0: [
-                'y5eBXdy8fhXAHFuYu3JgirBunz1SsvyQ7g',
-                'yFDsWerVPm2TzekdpmuACNz2tRsCudnYmU',
-                'y4Swao25gHXSELKTzn5F5is9GytZm4kkJt',
-                'yBrsVZg3a3bJEoVCGTcppX2SFkGPJy7Duv',
-                'y9upM38TYo79boE48NdvkdQ2Hyi2JJekRo',
+                'tFawiLPg9XxeU4EWc1JruLvUEvv8GRjvky',
+                'tRAdhMH2sbTxBT5bXjuLNsibLNmtMfrTrR',
+                'tEPhmVSdA7xvR8eRhk5RGDbhivoFEZ8YV5',
+                'tModgG6b3t2nRbp9yRd111kzhhB4mKVJsK',
+                'tKraXjZ12dYdnbZ1qLe6w88ajvchkbJT8X',
             ],
             1: [
-                'yAFRMPnsnCQbxRKFx6u1GhKQLafX1EHLTx',
-                'yHQrYayVZxYQhBbhPxNu6C4HBSjt8AScTT',
-                'xzFHoPegqHquLE8W2DMMobeRnWq11bVvMB',
-                'y1bWJZST917SvrSH6ynT3keD4D3ob3VyXD',
-                'xwpxLcrDywZboafRNTVvWjDXqNrw6iFDtm',
+                'tLCBY6DRG2r69DeDf4uBTC3xnXaCQUPeBx',
+                'tTMcjHQ33nytsyvf6vP5GgnqdPeZcZcDsD',
+                'tAC3z65EK8HPX2TTjBMXz6NzETjgWuTcLN',
+                'tBYGVFrzcqYw7emEowndEFNmW9xUzivunf',
+                't7miXKGmTn15zNzP5RW6hDx6HKmcZXib75',
             ],
             2: [
-                'y9mY3ku8SxEYEWYCK8Q1B2Sskg3pzBhBzP',
-                'yDY276awC1Hg43Nxr3EuoMvHakMsX31Bgy',
-                'yEKycCqkDqQs2D6DgAJWpZsN3WqmAzS5dA',
-                'y5ZVwmyrBmmd4WaQjM7enqZGWT8gYYFA8P',
-                'xw3MUT7M69VTdGb2WTEwMEVnFxxyrZU5GR',
+                'tKiJETKfvng2RJsA26QBMXBSCcxWYEp7wg',
+                'tPUnHo1UfqjAEqhvZ1F5yrer2hGYzQvRaJ',
+                'tQGjnuGHhfrMD1RBP8Jh14bvVTkScjQw8X',
+                'tFWG8UQPfcD7FJuNSK7pyLHpxQ3MzjBWaz',
+                't6z7f9XtZyvwp4uzDRF7XjELhusfMFVx3i',
             ],
         };
         for (const key of keys) {
@@ -228,14 +224,14 @@ describe('testnet tests', () => {
     });
     test('Correct Base58Check validation of addresses', () => {
         const arrTestAddresses = [
-            'yJ9zhqrwEj7VAjxJZEWqEEtoWQaHK2NKye', // VALID
-            'tJ9zhqrwEj7VAjxJZEWqEEtoWQaHK2NKye', // BAD
-            'DJ9zhqrwEj7VAjxJZEWqEEtoWQaHK2NKye', // BAD
-            'yJ9zhqrwEj7VAjxJZEWqEEtoWQaHK2NKyE', // BAD
-            'yJ9zh  wEj7VAjxJZEWqEEtoWQaHK2NKye', // BAD
+            'tVEPsY5AgrQJ4kG4j2TxRRYFwnh4BSkhZR', // VALID
+            'oVEPsY5AgrQJ4kG4j2TxRRYFwnh4BSkhZR', // BAD
+            'DVEPsY5AgrQJ4kG4j2TxRRYFwnh4BSkhZR', // BAD
+            'tVEPsY5AgrQJ4kG4j2TxRRYFwnh4BSkhZr', // BAD
+            'tVEPsY  AgrQJ4kG4j2TxRRYFwnh4BSkhZR', // BAD
             'i55j', // BAD
             '', // BAD
-            'DLabsktzGMnsK5K9uRTMCF6NoYNY6ET4Bb', // BAD (Mainnet Address)
+            'ofAixz87AXWaPS5qdhAHPzNWXTRd2nDdHN', // BAD (Mainnet Address)
         ];
 
         // Test verifying each address and expect that each of them follow the above validity table

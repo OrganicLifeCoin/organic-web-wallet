@@ -3,6 +3,7 @@ import { doms } from './global.js';
 import qrcode from 'qrcode-generator';
 import bs58 from 'bs58';
 import { BIP21_PREFIX, cChainParams } from './chain_params.js';
+import { isValidPQAddress } from './pqwallet/pqaddress.js';
 import { dSHA256 } from './utils.js';
 import { verifyPubkey, verifyBech32 } from './encoding.js';
 import { Address6 } from 'ip-address';
@@ -25,9 +26,12 @@ export function downloadBlob(content, filename, contentType) {
 
     // Create a link to download it
     const pom = document.createElement('a');
-    pom.href = URL.createObjectURL(blob);
+    const objectUrl = URL.createObjectURL(blob);
+    pom.href = objectUrl;
     pom.setAttribute('download', filename);
     pom.click();
+    // Release the object URL once the browser has started the download.
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
 /**
@@ -222,11 +226,12 @@ export function isShieldAddress(strAddress) {
 
 /**
  * @param {string} strAddress
- * @return {boolean} If a straddress is a valid OrganicLifeCoin address,
- * i.e. shield, xpub or standard
+ * @return {boolean} If a string is a valid OrganicLifeCoin address,
+ * i.e. PQ, shield, xpub or standard
  */
 export function isValidOLCAddress(strAddress) {
     return (
+        isValidPQAddress(strAddress, cChainParams.current.name) ||
         isStandardAddress(strAddress) ||
         isColdAddress(strAddress) ||
         isShieldAddress(strAddress) ||

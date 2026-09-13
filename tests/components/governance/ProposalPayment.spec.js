@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
 import ProposalPayment from '../../../scripts/governance/ProposalPayment.vue';
 import MobileProposalPayment from '../../../scripts/governance/MobileProposalPayment.vue';
-import MobileProposalPayment from '../../../scripts/governance/MobileProposalPayment.vue';
 
 vi.mock('../../../scripts/i18n.js');
 for (const { Component, name } of [
@@ -42,7 +41,7 @@ for (const { Component, name } of [
             expect(
                 wrapper.find('[data-testid="governInstallments"]').text()
             ).toMatch(
-                /3\s*proposalPaymentsRemaining\s*30,000 PIV proposalPaymentTotal/
+                /3\s*proposalPaymentsRemaining\s*30,000 OLC proposalPaymentTotal/
             );
         });
     });

@@ -3,6 +3,7 @@ import { ParsedSecret } from '../../scripts/parsed_secret.js';
 import secretTestCases from './parsed_secret.json';
 import * as pivxShield from 'pivx-shield';
 import { bytesToHex } from '../../scripts/utils.js';
+import { cChainParams } from '../../scripts/chain_params.js';
 
 vi.mock('pivx-shield', () => {
     return {
@@ -14,6 +15,7 @@ vi.mock('pivx-shield', () => {
 
 describe('Parsed secret tests', () => {
     beforeEach(() => {
+        cChainParams.current = cChainParams.main;
         pivxShield.PIVXShield.create = vi.fn(async () => ({}));
     });
     it.each(secretTestCases)(

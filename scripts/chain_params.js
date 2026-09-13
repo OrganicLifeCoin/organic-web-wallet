@@ -22,6 +22,15 @@ export const MIN_PASS_LENGTH = 6;
 /** BIP21 coin prefix */
 export const BIP21_PREFIX = 'olc';
 
+/**
+ * Genesis block hash (display hex) per PQ network. The PQ signature message
+ * commits to the genesis hash, so a transfer signer must use the hash of the
+ * network it broadcasts on. The wallet supports testnet only.
+ */
+export const PQ_GENESIS_HASH = {
+    testnet: '0000074a425b707b97fd4404f6e97f69e2fb627ee0c9e62a6800152f483a1886',
+};
+
 /* chainparams */
 export const cChainParams = reactive({
     current: chainParams.testnet,

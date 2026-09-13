@@ -1,10 +1,15 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 import LocalProposalStatus from '../../../scripts/governance/LocalProposalStatus.vue';
+import { cChainParams } from '../../../scripts/chain_params.js';
 
 vi.mock('../../../scripts/i18n.js');
 
 describe('LocalProposalStatus component tests', () => {
+    beforeEach(() => {
+        cChainParams.current = cChainParams.main;
+    });
+
     it('displays correct information', async () => {
         const wrapper = mount(LocalProposalStatus, {
             props: {

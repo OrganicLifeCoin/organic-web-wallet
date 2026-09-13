@@ -217,22 +217,22 @@ describe('database tests', () => {
             publicKey: 'test1',
         });
         await db.addAccount(account);
-        expect(() => db.addAccount(account)).rejects.toThrow(
+        await expect(db.addAccount(account)).rejects.toThrow(
             /account already exists/i
         );
     });
     it('throws when called with an invalid account', async () => {
         const db = await Database.create('test');
-        expect(() => db.addAccount({ publicKey: 'jaeir' })).rejects.toThrow(
+        await expect(db.addAccount({ publicKey: 'jaeir' })).rejects.toThrow(
             /invalid account/
         );
-        expect(() => db.updateAccount({ publicKey: 'jaeir' })).rejects.toThrow(
+        await expect(db.updateAccount({ publicKey: 'jaeir' })).rejects.toThrow(
             /invalid account/
         );
     });
     it("throws when updating an account that doesn't exist", async () => {
         const db = await Database.create('test');
-        expect(() => db.updateAccount(new Account())).rejects.toThrow(
+        await expect(db.updateAccount(new Account())).rejects.toThrow(
             /account doesn't exist/
         );
     });

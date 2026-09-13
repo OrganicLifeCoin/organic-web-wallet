@@ -7,9 +7,14 @@ const settingsPath = resolve(process.cwd(), 'scripts/settings.js');
 const globalPath = resolve(process.cwd(), 'scripts/global.js');
 
 describe('theme mode behavior', () => {
-    it('offers system theme mode in settings selector', () => {
+    it('does not expose the dormant legacy settings screen', () => {
         const html = readFileSync(indexTemplatePath, 'utf8');
-        expect(html).toContain('<option value="system">System</option>');
+        const entry = readFileSync(
+            resolve(process.cwd(), 'scripts/pqwallet/entry.js'),
+            'utf8'
+        );
+        expect(html).not.toContain('id="Settings"');
+        expect(entry).not.toContain('settings.js');
     });
 
     it('defaults theme preference to system mode', () => {

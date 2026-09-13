@@ -1,353 +1,47 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
-    <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
     <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=9" />
-    <link rel="shortcut icon" type="image/x-icon" href="favicon.ico" />
-    <link rel="icon" type="image/x-icon" href="favicon.ico" />
-
-    <!-- Primary Meta Tags -->
-    <title>OrganicLifeCoin Web Wallet</title>
-    <meta name="title" content="OrganicLifeCoin Web Wallet" />
-    <meta name="description" content="Create, secure, send, receive, stake, and manage OrganicLifeCoin in a non-custodial browser wallet." />
-    <meta name="keywords" content="web,wallet,webwallet,crypto,cryptocurrency,opensource,oss,organiclifecoin,olc,staking,masternodes,exchange,swap,decentralized" />
-
-    <link rel="manifest" href="manifest.json"/>
-    <meta name="mobile-web-app-capable" content="yes" />
-
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website" />
-    <meta property="og:locale" content="en_GB" />
-    <meta property="og:url" content="/" />
-    <meta property="og:title" content="OrganicLifeCoin Web Wallet" />
-    <meta property="og:description" content="Create, secure, send, receive, stake, and manage OrganicLifeCoin in a non-custodial browser wallet." />
-    <meta property="og:image" content="/logo_opaque-dark-bg.png" />
-
-    <!-- Twitter -->
-    <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content="/" />
-    <meta property="twitter:title" content="OrganicLifeCoin Web Wallet" />
-    <meta property="twitter:description" content="Create, secure, send, receive, stake, and manage OrganicLifeCoin in a non-custodial browser wallet." />
-    <meta property="twitter:image" content="/logo_opaque-dark-bg.png" />
-
-    <!-- Colour Theme -->
-    <meta name="msapplication-TileColor" content="#0d1a08" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="referrer" content="no-referrer" />
     <meta name="theme-color" content="#0d1a08" />
-
-    <link rel="canonical" href="/" />
+    <meta name="olc-wallet-build" content="2026-09-13-noncustodial-pq-v1" />
+    <meta name="description" content="Non-custodial post-quantum browser wallet for OrganicLifeCoin testnet." />
+    <meta name="keywords" content="OrganicLifeCoin,OLC,PQ,ML-DSA-44,wallet,masternode,testnet" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link rel="manifest" href="manifest.json" />
+    <title>OrganicLifeCoin PQ Wallet</title>
   </head>
-
   <body>
-      <input class="hide-element" type="text" id="clipboard">
     <div id="page-container" class="background-public">
       <div class="home-hero-dark gradientBackground"></div>
-      <div id="page-container-light" class="home-hero gradientBackground" style="opacity:1;"></div>
-      <div id="content-wrap">
-        <!-- NAVBAR -->
-        <nav class="navbar navbar-expand-lg sticky-top navbar-dark navbarSpecial" style="z-index: 2001;" id="navbar">
-          <div class="container" style="position:relative">
-            <img onclick="OLCWallet.openTab(event, 'keypair')" style="cursor: pointer;" class="nav-logo navbar-brand noselect" alt="OrganicLifeCoin" id="olc-wallet-main-logo" />
-
-            <div class="newNavBar collapse" id="navbarNav">
-              <ul class="navbar-nav">
-                <li class="nav-item"><span id="dashboard" class="nav-link tablinks" onclick="OLCWallet.openTab(event, 'keypair')" data-i18n="navDashboard">Dashboard</span></li>
-                <li class="nav-item"><span id="stakeTab" class="nav-link tablinks" onclick="OLCWallet.openTab(event, 'StakingTab')" data-i18n="navStake">Stake</span></li>
-                <li class="nav-item"><span id="masternodeTab" class="nav-link tablinks" onclick="OLCWallet.openTab(event, 'Masternode')" data-i18n="navMasternode">Masternode</span></li>
-                <li class="nav-item"><span id="governanceTab" class="nav-link tablinks" onclick="OLCWallet.openTab(event, 'Governance')" data-i18n="navGovernance">Governance</span></li>
-                <li class="nav-item"><span class="nav-link tablinks" onclick="OLCWallet.openTab(event, 'Settings');" data-i18n="navSettings">Settings</span></li>
-              </ul>
-
-              <!-- SIDE NAVBAR -->
-              <div id="SideNavbar" class="d-none">
-              </div>
-            </div>
-
-            <div style="display: flex;">
-              <!-- MULTIWALLET NAVBAR -->
-              <div id="MultiWallet"></div>
-
-              <ul class="navbar-nav small-dark-bg navBarActions showMenuMobile">
-                <li class="nav-item">
-                  <span class="nav-link ptr collapsed" id="navbarToggler" style="width:33px" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></span>
-                </li>
-              </ul>
-            </div>
-
+      <div id="page-container-light" class="home-hero gradientBackground" style="opacity: 1"></div>
+      <main id="content-wrap">
+        <nav class="navbar navbar-dark navbarSpecial" aria-label="Primary">
+          <div class="container">
+            <a class="navbar-brand" href="/" aria-label="OrganicLifeCoin wallet home">
+              <img src="/logo_opaque-dark-bg.png" alt="OrganicLifeCoin" style="height: 46px; width: auto" />
+            </a>
+            <span class="navbar-text" style="color: #f2f8fa">PQ Testnet Wallet</span>
           </div>
         </nav>
-        <!-- // NAVBAR -->
-
-        <!-- // QR MODAL -->
-        <div class="modal fade" id="qrModal" tabindex="-1" role="dialog" aria-labelledby="qrModalLabel" aria-hidden="true">
-          <div class="modal-dialog modal-dialog-centered" role="document">
-            <div class="modal-content exportKeysModalColor">
-              <div class="modal-header">
-                <div style="display: flex; justify-content: center; width: 100%;">
-                  <h5 class="modal-title" data-i18n="receive" id="qrModalLabel" style="font-family: 'Montserrat';">
-                    Receive
-                  </h5>
-                </div>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                  <i class="fa-solid fa-xmark closeCross"></i>
-                </button>
-              </div>
-              <div class="modal-body center-text">
-                <code id="ModalQRLabel" class="wallet-code-new w-100" style="margin-bottom: 18px; padding-right: 35px;"></code>
-                <div id="ModalQR" style="font-family: 'Montserrat'; text-align: start; border-radius: 10px; border: 1px solid #1d265a; background-color: #161a45; padding: 13px 13px;" class="auto-fit"></div>
-                <center>
-                  <button id="ModalQRReceiveTypeBtn" class="olc-button-small" onclick="OLCWallet.guiToggleReceiveType()" style="margin-top:25px; height: 42px; width: 250px;">
-                    <span class="buttoni-text">Change to Address</span>
-                  </button>
-                </center>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- // QR Reader -->
-        <div class="modal fade" id="qrReaderModal" tabindex="-1" role="dialog" aria-labelledby="qrReaderModalLabel" aria-hidden="true">
-          <div class="modal-dialog modal-dialog-centered" role="document">
-            <div class="modal-content exportKeysModalColor">
-              <div class="modal-header">
-                <h5 class="modal-title" id="qrReaderModalLabel">QR Scanner</h5>
-                <button id="closeQrReader" type="button" class="close" aria-label="Close">
-                  <i class="fa-solid fa-xmark closeCross"></i>
-                </button>
-              </div>
-              <div class="modal-body center-text">
-                <video id="qrReaderStream"></video>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- // Wallet Breakdown -->
-        <div class="modal fade" id="walletBreakdownModal" tabindex="-1" aria-labelledby="walletBreakdownModalLabel" role="dialog" aria-hidden="true">
-          <div class="modal-dialog modal-dialog-centered" role="document">
-            <div class="modal-content exportKeysModalColor">
-              <div class="modal-header" style="display: flex; justify-content: center; padding-bottom: 0px;">
-                <h5 data-i18n="balanceBreakdown" class="modal-title" id="walletBreakdownModalLabel">Balance Breakdown</h5>
-              </div>
-              <div class="modal-body center-text" style="padding-bottom: 0px; padding-top: 0px;">
-                <canvas id="walletBreakdownCanvas"></canvas>
-                <div id="walletBreakdownLegend" style="padding-left: 14px; padding-top: 20px;"></div>
-              </div>
-              <div class="modal-footer" style="padding-top: 0px; display: flex; justify-content: center;">
-                <button type="button" class="olc-button-big-cancel" data-dismiss="modal" aria-label="Close">Close</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <br />
-        <!-- // CONFIRM MODAL -->
-        <div class="modal" id="confirmModal" tabindex="-1" style="width: 100%; z-index: 2000; background-color: #121437db;" role="dialog" aria-hidden="true" data-backdrop="static" data-keyboard="false">
-          <div id="confirmModalDialog" class="modal-dialog max-w-600" role="document">
-            <div id="confirmModalMain" class="modal-content modalMain">
-              <div class="modal-header" id="confirmModalHeader">
-                <h3 class="modal-title" id="confirmModalTitle" style="text-align: center; width: 100%; color: #EB1B24;"></h3>
-              </div>
-              <div id="confirmModalContent" class="modal-body center-text" style="color: #b9bfd4;">
-                <!-- JS populated modal content -->
-              </div>
-              <div class="modal-footer" id="confirmModalButtons">
-                <div id="confirmModalCancelButton" class="olc-button-outline" style="float: left;">
-                  <span>Cancel</span>
-                </div>
-                <button data-i18n="popupConfirm" type="button" id="confirmModalConfirmButton" class="olc-button-big" style="float: right;">Confirm</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-
         <div class="container containerMobileApp">
-          <div class="row no-gutters">
-            <div class="col-md-12 rm-pd">
-              <div class="tabcontent" style="display: block;">
-                <!-- TITLE SECTION -->
-                <div class="col-md-12 title-section float-left rm-pd">
-                  <h1 class="olc-bold-title center-text">
-                    <div class="loadingDots">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </div>
-                    <span data-i18n="loadingTitle">OrganicLifeCoin Wallet is</span>
-                    <div data-i18n="loading">Loading</div>
-                  </h1>
-                </div>
-                <!-- // TITLE SECTION -->
-              </div>
-
-              <div id="DashboardTab"> </div>
-              <div id="StakingTab" class="tabcontent"> </div>
-	      <div id="Masternode" class="tabcontent"> </div>
-	      <div id="Governance" class="tabcontent"> </div>
-
-              <div id="Settings" class="tabcontent">
-                <div class="row">
-                  <div class="col-12">
-                    <ul class="settingsMenu">
-                      <li data-i18n="wallet" onclick="OLCWallet.switchSettings('wallet')" id="settingsWalletBtn" class="active">Wallet</li>
-                      <li data-i18n="display" onclick="OLCWallet.switchSettings('display')" id="settingsDisplayBtn">Display</li>
-                    </ul>
-
-                    <div id="settingsWallet" class="settingsContent">
-
-                      <label for="explorer" data-i18n="settingsExplorer">Choose an explorer:</label>
-                      <br />
-                      <select id="explorer" class="form-control" name="explorer">
-                        <!-- Populated via JS at DOM load (settings.js) -->
-                      </select>
-
-                      <br />
-
-                      <label for="node" data-i18n="settingsPivxNode">Choose an OrganicLifeCoin node:</label>
-                      <br />
-                      <select id="node" class="form-control" name="node">
-                        <!-- Populated via JS at DOM load (settings.js) -->
-                      </select>
-
-                      <br />
-
-                      <hr>
-                      <div id="changePassword-container" class="d-none">
-                        <label for="UNKNOWN" data-i18n="TODOTXT">Change your wallet's password</label>
-                        <br>
-                        <button class="olc-button-small" style="height: 42px; width: 210px; margin: 0px; margin-top: 2px; margin-bottom: 12px;" id="changePasswordBtn" onclick="OLCWallet.changePassword()">
-                          <span class="buttoni-text">
-                            <span id="change-pwd-icon" class="change-pwd-icon"></span>
-                            Change Password
-                          </span>
-                        </button>
-                        <hr>
-                      </div>
-
-                      <label for="UNKNOWN" data-i18n="TODOTXT">Change your wallet's operational mode</label>
-
-                      <!-- Default switch -->
-                      <div class="custom-control custom-switch">
-                        <input type="checkbox" class="custom-control-input" id="debugToggler" onclick="OLCWallet.toggleDebug()">
-                        <label data-i18n="settingsToggleDebug" class="custom-control-label" for="debugToggler">Debug Mode</label>
-                      </div>
-
-                      <br>
-
-                        <div class="custom-control custom-switch">
-                          <input type="checkbox" class="custom-control-input" id="autoLockModeToggler" onclick="OLCWallet.toggleAutoLockWallet()">
-                          <label data-i18n="settingsToggleAutoLockWallet" class="custom-control-label" for="autoLockModeToggler">Auto Lock the Wallet</label>
-                      </div>
-
-                      <br>
-
-                      <div class="custom-control custom-switch">
-                        <input type="checkbox" class="custom-control-input" id="advancedModeToggler" onclick="OLCWallet.toggleAdvancedMode()">
-                        <label data-i18n="settingsToggleAdvancedMode" class="custom-control-label" for="advancedModeToggler">Advanced Mode</label>
-                        <p style="margin-top: 5px; color: var(--theme-text-muted);"><i class="fa-solid fa-triangle-exclamation" style="margin-right: 5px;"></i><span data-i18n="settingsToggleAdvancedModeSubtext">This unlocks deeper functionality and customisation, but may be overwhelming and potentially dangerous for unexperienced users!</p>
-                      </div>
-
-		      <div>
-			  <hr>
-			  <label for="resync-button" data-i18n="resyncWalletDesc"></label>
-			  <br>
-			  <button id="resync-button" class="olc-button-small"
-				  style="height: 42px; width: 185px; margin: 0px; margin-top: 2px;"
-				  onclick="OLCWallet.resync()">
-			      <span class="buttoni-text">
-				  <i class="fa-solid fa-arrows-rotate del-wallet-icon"></i>
-				  <span data-i18n="resyncWalletButton"> </span>
-			      </span>
-			  </button>
-		      </div>
-
-                      <div id="logOut-container">
-                        <hr>
-
-                        <label for="UNKNOWN" data-i18n="TODOTXT">Permanently delete your wallet</label>
-                        <br>
-                        <button class="olc-button-small" style="height: 42px; width: 185px; margin: 0px; margin-top: 2px;" onclick="OLCWallet.logOut()" data-testid="deleteWalletButton">
-                          <span class="buttoni-text">
-                            <span id="del-wallet-icon" class="del-wallet-icon"></span>
-                            Delete Wallet
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div id="settingsDisplay" class="d-none settingsContent">
-                      <label for="currency" data-i18n="settingsCurrency">Choose a display currency:</label>
-                      <br />
-                      <select id="currency" class="form-control" name="currency">
-                        <!-- Populated via JS at Price Source data load (prices.js) -->
-                      </select>
-
-                      <br />
-
-                      <label for="themeMode">Theme:</label>
-                      <br />
-                      <select id="themeMode" class="form-control" name="themeMode">
-                        <option value="system">System</option>
-                        <option value="light">Light</option>
-                        <option value="dark">Dark</option>
-                      </select>
-
-                      <br />
-
-                      <label for="displayDecimals" data-i18n="settingsDecimals">Balance Decimals:</label> <span class="sliderDisplay" id="sliderDisplay">(-)</span>
-                      <br />
-
-                      <div class="sliderContainer">
-                      </div>
-                      <input type="range" min="0" max="8" value="2" class="slider" id="displayDecimals" name="displayDecimals" data-toggle="tooltip" data-placement="top" title="0">
-
-                      <br />
-                      <br />
-
-                      <label for="translation" data-i18n="settingsLanguage">Choose a Language:</label>
-                      <br />
-                      <select id="translation" class="form-control" name="translation">
-                        <!-- Populated via JS at DOM load (settings.js) -->
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <div id="PQWallet"></div>
         </div>
-      </div>
-      <!--
-      Alert
-    -->
-      <div class="alertPositioning" id="Alerts"></div>
-      <footer id="foot" style="padding-bottom: 19px;">
+      </main>
+      <div class="alertPositioning" id="Alerts" aria-live="polite"></div>
+      <footer id="foot" style="padding-bottom: 19px">
         <div class="footer container">
-
-          <div class="row" style="margin:0px; width: 100%;">
-            <div class="col-12 col-md-8 footFlexMob" style="color:#a6abc0;">
-              <div class="w-50-mob">
-                <span id="version" class="ptr" onclick="OLCWallet.renderChangelog();"></span> - © MIT <span id="copyrightYear">2024</span>
-              </div>
-
-              <div class="w-50-mob textCenterMob">
-                <span style="cursor: pointer;" onclick="OLCWallet.playMusic()" data-i18n="footerBuiltWithPivxLabs">Built with 💙 by OrganicLifeCoin Team</span>
-              </div>
+          <div class="row" style="margin: 0; width: 100%">
+            <div class="col-12 col-md-8" style="color: #a6abc0">
+              OrganicLifeCoin Wallet · © <span id="copyrightYear"></span> · MIT
             </div>
-
             <div class="col-12 col-md-4 footer-icons text-right">
-              <a class="footer-social-link" href="https://organiclife.coin" target="_blank" rel="noopener noreferrer" aria-label="OrganicLifeCoin">
-                <i class="fa-solid fa-globe"></i> organiclife.coin
-              </a>
+              <a class="footer-social-link" href="https://organiclife.coin" target="_blank" rel="noopener noreferrer">organiclife.coin</a>
             </div>
           </div>
-
         </div>
       </footer>
     </div>
-
-    <div class="blackBack blackBackHide d-none" id="blackBack"></div>
-    <div id="app"></div>
   </body>
 </html>
