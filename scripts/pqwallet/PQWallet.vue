@@ -937,8 +937,11 @@ function handleLock() {
 }
 
 function handleUnload() {
+    const wasUnlocked = view.value === 'unlocked';
     lockWallet();
     clearWalletState();
+    justCreated.value = false;
+    if (wasUnlocked) view.value = 'locked';
 }
 
 // --- Receive ---
@@ -1557,19 +1560,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
     window.removeEventListener('beforeunload', handleUnload);
     window.removeEventListener('pagehide', handleUnload);
-    revealGeneration += 1;
-    recoveryRevealGeneration += 1;
-    clearTimeout(previewTimer);
-    clearTimeout(revealTimer);
-    clearTimeout(recoveryTimer);
-    pendingMnemonic.value = '';
-    restoreMnemonic.value = '';
-    revealedMnemonic.value = '';
-    createPassword.value = '';
-    createPasswordConfirm.value = '';
-    restoreMnemonicPassword.value = '';
-    restoreMnemonicPasswordConfirm.value = '';
-    recoveryPassword.value = '';
+    handleUnload();
 });
 </script>
 

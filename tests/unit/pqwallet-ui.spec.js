@@ -297,6 +297,20 @@ describe('PQWallet UI', () => {
         expect(view.text()).toContain('Wallet locked');
     });
 
+    it('returns a bfcache-restored page to a consistent locked view', async () => {
+        await createLockedWallet();
+        await unlockWallet(PASSWORD);
+        const view = mountWallet();
+        await waitFor(async () => view.text().includes('Activity'));
+
+        window.dispatchEvent(new Event('pagehide'));
+        await flushPromises();
+
+        expect(isUnlocked()).toBe(false);
+        expect(view.text()).toContain('Wallet locked');
+        expect(view.text()).not.toContain('0 key(s)');
+    });
+
     it('renders activity direction and net amounts from the explorer shape', async () => {
         await createLockedWallet();
         await unlockWallet(PASSWORD);
