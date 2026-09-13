@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { summarizeActivity } from '../../scripts/pqwallet/pqactivity.js';
+import { serializeTransfer, txidOf } from '../../scripts/pqwallet/pqtxtx.js';
+import { pqScriptFromAddress } from '../../scripts/pqwallet/pqaddress.js';
+import { bytesToHex } from '@noble/hashes/utils';
 
 const US =
     'olcpqtest1ppf0kwsev98fsffnp9hpe0chp509e7mvpgpzyd5erfslqtgsxkrls25pmyv';
@@ -62,6 +65,20 @@ function incomingTx() {
 }
 
 describe('summarizeActivity', () => {
+    it('recognizes coinstake bytes without counting returned principal as reward', () => {
+        const raw = serializeTransfer({ network: 'testnet', mode: 2,
+            inputs: [{ txid: TXID_OUT, vout: 0, publicKey: new Uint8Array(1312), signature: new Uint8Array(2420) }],
+            outputs: [{ value: 0n, script: new Uint8Array() }, { value: 110000000n, script: pqScriptFromAddress(US, 'testnet') }],
+        });
+        const tx = { txid: txidOf(raw), hex: bytesToHex(raw), confirmations: 1,
+            vin: [{ addresses: [US], value: '100000000' }], vout: [{ addresses: [US], value: '110000000' }] };
+        const [row] = summarizeActivity([tx], [US]);
+        expect(row.isStake).toBe(true);
+        expect(row.net).toBe(10000000n);
+        expect(summarizeActivity([{ ...tx, hex: undefined }], [US])[0].isStake).toBe(false);
+        expect(summarizeActivity([{ ...tx, txid: TXID_IN }], [US])[0].isStake).toBe(false);
+        expect(summarizeActivity([{ ...tx, confirmations: 0 }], [US])[0].isStake).toBe(false);
+    });
     it('nets an outgoing transaction from our inputs and marks it out', () => {
         const [row] = summarizeActivity([outgoingTx()], [US]);
         expect(row.txid).toBe(TXID_OUT);

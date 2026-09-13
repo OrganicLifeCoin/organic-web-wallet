@@ -10,6 +10,10 @@ import {
     fetchTx,
     fetchUTXOs,
     fetchWithTimeout,
+    prepareStake,
+    submitStake,
+    fetchStakingStatus,
+    fetchBestBlockHash,
 } from '../../scripts/pqwallet/pqnetwork';
 
 const ADDRESS =
@@ -36,6 +40,50 @@ afterEach(() => {
 });
 
 describe('pqnetwork', () => {
+    it('uses the dedicated staking endpoints with exact public JSON payloads', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ enabled: true }));
+        vi.stubGlobal('fetch', fetchMock);
+        await fetchStakingStatus();
+        const outpoints = [{ txid: TXID, vout: 0 }];
+        await prepareStake(outpoints);
+        await submitStake('abcd');
+        expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+            '/testnet/staking/status', '/testnet/staking/prepare', '/testnet/staking/submit',
+        ]);
+        expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ outpoints });
+        expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ block: 'abcd' });
+        fetchMock.mockResolvedValue(jsonResponse(JSON.stringify(TXID)));
+        await expect(fetchBestBlockHash()).resolves.toBe(TXID);
+    });
+    it('propagates session cancellation to a pending staking request', async () => {
+        const controller = new AbortController();
+        vi.stubGlobal('fetch', vi.fn((_url, { signal }) => new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(new Error('cancelled')));
+        })));
+        const result = prepareStake([], controller.signal);
+        controller.abort();
+        await expect(result).rejects.toThrow('cancelled');
+    });
+    it('keeps cancellation connected while a staking response body is downloading', async () => {
+        const controller = new AbortController();
+        let bodySignal;
+        vi.stubGlobal('fetch', vi.fn(async (_url, { signal }) => ({ ok: true,
+            json: () => new Promise((_resolve, reject) => {
+                bodySignal = signal;
+                signal.addEventListener('abort', () => reject(new Error('body cancelled')));
+            }),
+        })));
+        const result = prepareStake([], controller.signal);
+        void result.catch(() => {});
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+        controller.abort();
+        expect(bodySignal.aborted).toBe(true);
+        await expect(result).rejects.toThrow();
+    });
+    it('fails closed when the collateral registry response is not a list', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'unavailable' })));
+        await expect(fetchMasternodes()).rejects.toThrow('Unexpected masternode registry response');
+    });
     it('converts OLC decimal strings to sats with string math', () => {
         expect(decimalToSats('1.23456789')).toBe(123456789n);
         expect(decimalToSats('0.00000001')).toBe(1n);

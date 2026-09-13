@@ -16,6 +16,8 @@ vi.mock('../../scripts/pqwallet/pqnetwork.js', async (importOriginal) => {
         broadcast: vi.fn(),
         fetchMasternodes: vi.fn().mockResolvedValue([]),
         fetchBlockCount: vi.fn().mockResolvedValue(3001),
+        fetchStakingStatus: vi.fn().mockResolvedValue({ enabled: true }),
+        prepareStake: vi.fn().mockResolvedValue({ eligible: 0, template: null }),
     };
 });
 
@@ -32,7 +34,7 @@ import {
     lockWallet,
     unlockWallet,
 } from '../../scripts/pqwallet/pqwallet-store.js';
-import { broadcast, fetchAddress } from '../../scripts/pqwallet/pqnetwork.js';
+import { broadcast, fetchAddress, fetchUTXOs } from '../../scripts/pqwallet/pqnetwork.js';
 import { createQR } from '../../scripts/pqwallet/pq-utils.js';
 import { cChainParams } from '../../scripts/chain_params.js';
 
@@ -74,6 +76,7 @@ beforeEach(async () => {
     vi.clearAllMocks();
     createQR.mockImplementation(() => {});
     fetchAddress.mockResolvedValue({ transactions: [] });
+    fetchUTXOs.mockResolvedValue([]);
     await resetStore();
 });
 
@@ -84,6 +87,94 @@ afterEach(async () => {
 });
 
 describe('PQWallet UI', () => {
+    it('starts only on request and locking stops the browser staking session', async () => {
+        await createLockedWallet();
+        await unlockWallet(PASSWORD);
+        mountWallet();
+        await waitFor(() => wrapper.find('[data-testid="pq-action-staking"]').exists());
+        await wrapper.get('[data-testid="pq-action-staking"]').trigger('click');
+        await waitFor(() => wrapper.find('[data-testid="pq-start-staking"]').exists());
+        expect(wrapper.get('[data-testid="pq-staking-status"]').text()).toBe('Not running');
+        await wrapper.get('[data-testid="pq-start-staking"]').trigger('click');
+        await flushPromises();
+        expect(wrapper.find('[data-testid="pq-stop-staking"]').exists()).toBe(true);
+        const lock = wrapper.findAll('button').find((button) => button.text() === 'Lock');
+        await lock.trigger('click');
+        expect(isUnlocked()).toBe(false);
+        expect(wrapper.find('[data-testid="pq-stop-staking"]').exists()).toBe(false);
+    });
+    it('keeps pending transactions visible ahead of older confirmed activity', async () => {
+        await createLockedWallet();
+        await unlockWallet(PASSWORD);
+        const [address] = await getAddresses();
+        const confirmed = Array.from({ length: 6 }, (_, index) => ({
+            txid: String(index + 1).repeat(64), confirmations: 20, blockTime: 1700000000 + index,
+            vin: [], vout: [{ value: '100000000', addresses: [address] }],
+        }));
+        const pendingTxid = 'f'.repeat(64);
+        fetchAddress.mockResolvedValue({ transactions: [...confirmed, {
+            txid: pendingTxid, confirmations: 0, blockTime: 0,
+            vin: [], vout: [{ value: '200000000', addresses: [address] }],
+        }] });
+        const view = mountWallet();
+        await waitFor(() => view.findAll('tbody tr').length === 5);
+        expect(view.findAll('tbody tr')[0].text()).toContain(pendingTxid);
+        await view.findAll('button').find((button) => button.text() === 'View all').trigger('click');
+        expect(view.findAll('tbody tr')).toHaveLength(7);
+    });
+
+    it('does not let background history completion release a balance refresh guard', async () => {
+        await createLockedWallet();
+        let resolveHistory;
+        fetchAddress.mockReturnValue(new Promise((resolve) => { resolveHistory = resolve; }));
+        const view = mountWallet();
+        await waitFor(() => view.text().includes('Wallet locked'));
+        await view.find('input[type="password"]').setValue(PASSWORD);
+        await view.findAll('button').find((button) => button.text() === 'Unlock').trigger('click');
+        await waitFor(() => fetchAddress.mock.calls.length > 0);
+        await flushPromises();
+        let resolveBalance;
+        fetchUTXOs.mockReturnValueOnce(new Promise((resolve) => { resolveBalance = resolve; }));
+        await view.findAll('button').find((button) => button.text() === 'Refresh').trigger('click');
+        resolveHistory({ transactions: [] });
+        await flushPromises();
+        expect(view.get('[data-testid="pq-action-send"]').attributes('disabled')).toBeDefined();
+        resolveBalance([]);
+        await waitFor(() => view.get('[data-testid="pq-action-send"]').attributes('disabled') === undefined);
+    });
+
+    it('opens the overview with balance breakdown, large actions and recent activity', async () => {
+        await createLockedWallet();
+        await unlockWallet(PASSWORD);
+        const [address] = await getAddresses();
+        fetchUTXOs.mockResolvedValue([
+            { txid: 'a'.repeat(64), vout: 0, valueSats: 1250000000n, confirmations: 12, address },
+            { txid: 'b'.repeat(64), vout: 0, valueSats: 250000000n, confirmations: 0, address },
+        ]);
+        const view = mountWallet();
+        await waitFor(() => view.text().includes('Activity'));
+        expect(view.get('.pqTab.active').text()).toBe('Overview');
+        await waitFor(() => view.text().includes('12.5'));
+        expect(view.get('[data-testid="pq-confirmed-balance"]').text()).toContain('12.5');
+        expect(view.get('[data-testid="pq-pending-balance"]').text()).toContain('2.5');
+        expect(view.get('[data-testid="pq-collateral-balance"]').text()).toContain('0 OLC');
+        expect(view.findAll('.pqQuickAction').map((button) => button.text())).toEqual([
+            'Send', 'Receive', 'Stake', 'Masternodes',
+        ]);
+        expect(view.text()).toContain('Recent activity');
+        await waitFor(() => view.text().includes('No transactions found'));
+        await view.get('[data-testid="pq-action-send"]').trigger('click');
+        expect(view.find('input.pqSendAddress').exists()).toBe(true);
+        await view.get('[data-testid="pq-action-receive"]').trigger('click');
+        expect(view.get('.pqReceiveAddress').text()).toBe(address);
+        await view.get('[data-testid="pq-action-staking"]').trigger('click');
+        expect(view.text()).toContain('Browser staking');
+        expect(view.text()).toContain('Not running');
+        expect(broadcast).not.toHaveBeenCalled();
+        await view.get('[data-testid="pq-action-masternodes"]').trigger('click');
+        expect(view.text()).toContain('collateral withdrawals are signed locally');
+    });
+
     it('offers create and restore when no wallet exists', async () => {
         const view = mountWallet();
         await waitFor(async () =>
@@ -423,6 +514,8 @@ describe('PQWallet UI', () => {
             throw new Error('qr failure');
         });
         const view = mountWallet();
+        await waitFor(() => view.find('[data-testid="pq-action-receive"]').exists());
+        await view.get('[data-testid="pq-action-receive"]').trigger('click');
         await waitFor(async () =>
             view.text().includes('Could not render the QR code')
         );

@@ -29,6 +29,7 @@ import {
     PQ_TX_TYPE,
     PQ_TX_VERSION,
     PQ_TRANSFER_MODE,
+    PQ_STAKE_MODE,
     modeHasData,
 } from './pqtxtx.js';
 
@@ -158,7 +159,7 @@ export function signPQTransaction({
     if (
         !Array.isArray(outputs) ||
         outputs.length < 1 ||
-        outputs.length > PQ_MAX_OUTPUTS
+        outputs.length > (mode === PQ_STAKE_MODE ? 3 : PQ_MAX_OUTPUTS)
     ) {
         throw new Error(`PQ transfer requires 1 to ${PQ_MAX_OUTPUTS} outputs`);
     }

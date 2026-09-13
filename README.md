@@ -18,7 +18,23 @@ The project is based on [PIVX Web Wallet](https://github.com/PIVX-Labs/MyPIVXWal
 - Export a Core-compatible encrypted operator configuration.
 - Withdraw only the exact collateral output with its browser-held collateral key.
 
-Browser staking is intentionally unavailable. Current OLC PQ staking requires a continuously online signing wallet. A web page cannot provide that safely without handing spending keys to an online service. A separate opt-in custody service can be deployed independently; it is not part of this wallet or its default server stack.
+Browser-local staking is opt-in and testnet-only. Keep the wallet open, unlocked, connected, and the device awake. The browser validates the selected coin, preserves its principal and ownership, signs the coinstake and block locally, and sends only the signed block for normal Core validation. Spending keys never go to the bridge. Closing or locking the wallet, or opening Send or Masternodes, stops the session. Already submitted blocks may still confirm. Staking does not restart automatically after a refresh or error. Browser throttling and device sleep can miss opportunities; rewards are not guaranteed.
+
+### Browser staking deployment
+
+Deploy compatible Core, RPC bridge, and wallet builds together on testnet. The Core build must expose the test-chain-only `preparepqstake` and `submitpqstake` RPCs; older releases do not provide these APIs. Keep Core RPC private and its wallet locked. The browser wallet does not import its keys into Core.
+
+In the bridge container, set `BROWSER_STAKING_ENABLED=1`, `NETWORK=testnet`, and include `getbestblockhash` in `ALLOWED_RPCS` alongside `getblockcount,getmempoolinfo,listpqmasternodes`. Forward `/testnet/staking/*` through the same HTTPS origin without caching, preserving the public Host header. The gateway must accept signed-block JSON bodies up to 4 MB. Start remains disabled when the bridge is unavailable or disabled. Mainnet staking is not supported.
+
+Before deployment, run the ordinary wallet and bridge tests plus the disposable end-to-end test below. It mines a new isolated regtest chain, uses public fixture keys, and checks a real browser-owned stake through the bridge while the Core wallet stays locked. It never connects to the live chain. The test retains its temporary evidence directory.
+
+```bash
+OLC_NODE_BIN=/path/to/core/build/src \
+OLC_BRIDGE_DIR=/path/to/organic-rpc-bridge \
+node tests/integration/pq-staking-regtest.mjs
+```
+
+For rollback, disable `BROWSER_STAKING_ENABLED` and restore the prior reviewed service images without deleting chain or wallet volumes. Review activity after an uncertain submission before starting again.
 
 ## Security boundary
 

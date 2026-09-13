@@ -6,6 +6,18 @@
 // The wallet must therefore rebuild the net value per transaction from the
 // `addresses` entries of its inputs and outputs.
 import { explorerValueToSats } from './pqnetwork.js';
+import { parseCoinstake, txidOf } from './pqtxtx.js';
+import { hexToBytes } from '@noble/hashes/utils';
+
+function confirmedCoinstake(tx) {
+    if (!(tx.confirmations > 0) || typeof tx.hex !== 'string' || tx.hex.length > 4000000) return false;
+    try {
+        const raw = hexToBytes(tx.hex);
+        if (txidOf(raw) !== tx.txid) return false;
+        parseCoinstake(raw);
+        return true;
+    } catch { return false; }
+}
 
 function entryAddresses(entry) {
     if (Array.isArray(entry?.addresses)) return entry.addresses;
@@ -92,6 +104,7 @@ export function summarizeActivity(transactions, walletAddresses) {
             spent,
             net: unavailable ? null : net,
             unavailable,
+            isStake: !unavailable && spent > 0n && net > 0n && confirmedCoinstake(tx),
             direction: unavailable ? null : net >= 0n ? 'in' : 'out',
             confirmations: tx.confirmations ?? 0,
             blockHeight: tx.blockHeight ?? -1,

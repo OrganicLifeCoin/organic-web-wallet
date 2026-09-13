@@ -18,6 +18,7 @@ import { useAlerts } from '../composables/use_alerts.js';
 import { tr, translation } from './pq-i18n.js';
 import newWalletIcon from '../../assets/icons/icon-new-wallet.svg';
 import importIcon from '../../assets/icons/icon-import.svg';
+import walletLogo from '../../assets/icons/organic-life-icon-192.png';
 import {
     createWallet,
     exportBackup,
@@ -52,7 +53,14 @@ import {
     fetchUTXOs,
     fetchBlockCount,
     fetchMasternodes,
+    fetchStakingStatus,
+    fetchBestBlockHash,
+    prepareStake,
+    submitStake,
 } from './pqnetwork.js';
+import { signStakeTemplate } from './pqstaking.js';
+import { parseCoinstake } from './pqtxtx.js';
+import { createStakingSession } from './pqstaking-session.js';
 import { summarizeActivity } from './pqactivity.js';
 import {
     PQ_DUST_SATS,
@@ -78,11 +86,19 @@ const REVEAL_TIMEOUT_MS = 60000;
 const insecureTransport = globalThis.isSecureContext === false;
 
 const TABS = [
+    { id: 'overview', labelKey: 'pqOverview' },
     { id: 'receive', labelKey: 'pqReceive' },
     { id: 'send', labelKey: 'pqSend' },
     { id: 'activity', labelKey: 'pqActivity' },
+    { id: 'staking', labelKey: 'pqStaking' },
     { id: 'masternodes', labelKey: 'pqMasternodes' },
     { id: 'backup', labelKey: 'pqBackup' },
+];
+const QUICK_ACTIONS = [
+    { id: 'send', labelKey: 'pqSend', icon: 'fa-paper-plane' },
+    { id: 'receive', labelKey: 'pqReceive', icon: 'fa-qrcode' },
+    { id: 'staking', labelKey: 'pqStake', icon: 'fa-seedling' },
+    { id: 'masternodes', labelKey: 'pqMasternodes', icon: 'fa-server' },
 ];
 
 // --- Global state ---
@@ -111,10 +127,11 @@ const unlockPassword = ref('');
 const addresses = ref([]);
 const utxos = ref([]);
 const feeRate = ref(null);
-const activeTab = ref('receive');
+const activeTab = ref('overview');
 const receiveAddress = ref('');
 const qrTarget = ref(null);
 const qrError = ref('');
+const walletNavigation = ref(null);
 
 // --- Send ---
 const sendAddress = ref('');
@@ -132,6 +149,67 @@ const activity = ref([]);
 const activityLoading = ref(false);
 const activityError = ref('');
 const activityLoaded = ref(false);
+
+// --- Explicit browser-local staking session ---
+const staking = ref({ active: false, phase: 'idle', error: '', eligible: null, checked: 0, lastBlock: '' });
+const stakingReady = ref(false);
+const stakingChecking = ref(false);
+let stakingStatusGeneration = 0;
+const stakingStatusLabel = computed(() => ({
+    idle: translation.pqNotRunning,
+    checking: translation.pqStakingChecking,
+    waiting: translation.pqStakingWaiting,
+    signing: translation.pqStakingSigning,
+    submitting: translation.pqStakingSubmitting,
+    accepted: translation.pqStakingAccepted,
+    error: translation.pqStakingStopped,
+}[staking.value.phase]));
+const stakingSession = createStakingSession({
+    canSign: () => view.value === 'unlocked' && isUnlocked() && isTestnet.value,
+    candidates: async (signal) => {
+        // Fail closed if the on-chain collateral registry cannot be read.
+        const [coins, local, registry] = await Promise.all([
+            fetchAllUtxos(signal), listMasternodeRecords(), fetchMasternodes(signal),
+        ]);
+        return { coins, reservedOutpoints: new Set([
+            ...local.filter((record) => record.status !== 'withdrawn')
+                .map((record) => `${record.collateralTxid}:${record.collateralVout}`),
+            ...registry.map((record) => `${record.collateral_txid}:${record.collateral_vout}`),
+        ]) };
+    },
+    prepare: prepareStake,
+    tip: fetchBestBlockHash,
+    sign: ({ template, coins, reservedOutpoints, expectedTip }) => {
+        const input = parseCoinstake(template.transactions?.[1]).inputs[0];
+        const candidate = coins.find((coin) => coin.txid === input.txid && coin.vout === input.vout);
+        if (!candidate) throw new Error('Staking template does not select a requested wallet coin');
+        const keypair = pqKeypairFromSeed(getSeed(candidate.address));
+        try {
+            return signStakeTemplate({ template, candidate, keypair, reservedOutpoints,
+                expectedTip, network: networkName.value, genesisDisplay: PQ_GENESIS_HASH[networkName.value] });
+        } finally { keypair.secretKey.fill(0); }
+    },
+    submit: submitStake,
+    onState: (state) => { staking.value = { ...staking.value, ...state }; },
+});
+
+async function checkStakingService() {
+    const generation = ++stakingStatusGeneration;
+    stakingChecking.value = true;
+    try {
+        const status = await fetchStakingStatus();
+        if (generation === stakingStatusGeneration) stakingReady.value = status?.enabled === true && isTestnet.value;
+    } catch {
+        if (generation === stakingStatusGeneration) stakingReady.value = false;
+    } finally {
+        if (generation === stakingStatusGeneration) stakingChecking.value = false;
+    }
+}
+function startStaking() {
+    if (!stakingReady.value || busyOperation.value || masternodeBusy.value) return;
+    staking.value = { active: false, phase: 'idle', error: '', eligible: null, checked: 0, lastBlock: '' };
+    stakingSession.start();
+}
 
 // --- Backup ---
 const revealAddress = ref('');
@@ -174,13 +252,28 @@ const totalBalance = computed(() =>
     utxos.value.reduce((sum, utxo) => sum + utxo.valueSats, 0n)
 );
 const reservedCollateralOutpoints = computed(() => new Set(
-    masternodeRecords.value
+    [...masternodeRecords.value
         .filter((record) => record.status !== 'withdrawn')
-        .map((record) => `${record.collateralTxid}:${record.collateralVout}`)
+        .map((record) => `${record.collateralTxid}:${record.collateralVout}`),
+    ...registryRecords.value.map((record) => `${record.collateral_txid}:${record.collateral_vout}`)]
 ));
 const spendableUtxos = computed(() => utxos.value.filter(
     (utxo) => !reservedCollateralOutpoints.value.has(`${utxo.txid}:${utxo.vout}`)
 ));
+const confirmedBalance = computed(() => spendableUtxos.value
+    .filter((utxo) => utxo.confirmations > 0)
+    .reduce((sum, utxo) => sum + utxo.valueSats, 0n));
+const pendingBalance = computed(() => spendableUtxos.value
+    .filter((utxo) => !(utxo.confirmations > 0))
+    .reduce((sum, utxo) => sum + utxo.valueSats, 0n));
+const collateralBalance = computed(() => totalBalance.value - confirmedBalance.value - pendingBalance.value);
+const displayedActivity = computed(() => {
+    if (activeTab.value === 'staking') return activity.value.filter((tx) => tx.isStake);
+    if (activeTab.value !== 'overview') return activity.value;
+    return [...activity.value]
+        .sort((a, b) => Number(b.confirmations === 0) - Number(a.confirmations === 0))
+        .slice(0, 5);
+});
 const masternodesActive = computed(() => chainHeight.value !== null && chainHeight.value + 1 >= 3000);
 
 const canContinueCreate = computed(
@@ -573,7 +666,7 @@ async function enterUnlocked() {
     if (addresses.value.length === 0)
         throw new Error('The PQ wallet has no keys');
     view.value = 'unlocked';
-    activeTab.value = 'receive';
+    activeTab.value = 'overview';
     mnOwnerAddress.value ||= addresses.value[0] || '';
     mnCollateralAddress.value ||= addresses.value[1] || addresses.value[0] || '';
     mnPayoutAddress.value ||= addresses.value[0] || '';
@@ -582,6 +675,8 @@ async function enterUnlocked() {
     await refreshFeeRate();
     await refreshWalletData();
     await ensureReceiveAddress();
+    // History owns its own loading state; it must not prolong the unlock guard.
+    void loadActivity();
 }
 
 async function refreshMasternodeData() {
@@ -607,9 +702,9 @@ async function refreshFeeRate() {
     }
 }
 
-async function fetchAllUtxos() {
+async function fetchAllUtxos(signal) {
     const lists = await Promise.all(
-        addresses.value.map((address) => fetchUTXOs(address))
+        addresses.value.map((address) => fetchUTXOs(address, signal))
     );
     return lists.flat();
 }
@@ -873,6 +968,11 @@ async function handleUnlock() {
 }
 
 function clearWalletState() {
+    stakingSession.stop();
+    stakingStatusGeneration++;
+    stakingReady.value = false;
+    stakingChecking.value = false;
+    staking.value = { active: false, phase: 'idle', error: '', eligible: null, checked: 0, lastBlock: '' };
     revealGeneration += 1;
     recoveryRevealGeneration += 1;
     clearTimeout(previewTimer);
@@ -946,14 +1046,18 @@ function handleUnload() {
 
 // --- Receive ---
 
-function selectTab(id) {
+function selectTab(id, scrollToPanel = false) {
+    // Sending or changing collateral must not compete with local staking.
+    if (id === 'send' || id === 'masternodes') stakingSession.stop();
     // Revealed recovery material must not survive a tab switch.
     clearReveal();
     clearRecoveryMnemonic();
     activeTab.value = id;
     if (id === 'receive') ensureReceiveAddress();
-    if (id === 'activity' && !activityLoaded.value) loadActivity();
+    if ((id === 'activity' || id === 'overview') && !activityLoaded.value) loadActivity();
     if (id === 'masternodes') refreshMasternodeData();
+    if (id === 'staking') { checkStakingService(); if (!activityLoaded.value) loadActivity(); }
+    if (scrollToPanel) void nextTick(() => walletNavigation.value?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }));
 }
 
 watch([activeTab, receiveAddress], async () => {
@@ -1897,10 +2001,14 @@ onBeforeUnmount(() => {
                 </button>
             </div>
 
-            <div class="dcWallet-activity pqPanel">
+            <div class="dcWallet-activity pqPanel pqWalletHero">
                 <div class="pqPanelHeader">
-                    <h4 class="pqTopConfigured">{{ translation.pqBalance }}</h4>
+                    <div class="pqWalletIdentity">
+                        <img :src="walletLogo" alt="" width="44" height="44" />
+                        <div><strong>OrganicLife Coin</strong><span>{{ translation.pqPersonalWallet }}</span></div>
+                    </div>
                     <div class="pqRow">
+                        <span class="pqNetworkBadge">{{ networkName }}</span>
                         <button
                             class="pqCopyBtn"
                             :disabled="busy"
@@ -1917,26 +2025,25 @@ onBeforeUnmount(() => {
                         </button>
                     </div>
                 </div>
-                <p class="pqBalance">
-                    {{ formatSats(totalBalance) }} {{ ticker }}
-                </p>
-                <div class="pqRow pqDashboardActions">
-                    <button
-                        class="pivx-button-small"
-                        :disabled="busyOperation"
-                        @click="selectTab('receive')"
-                    >
-                        {{ translation.pqReceive }}
-                    </button>
-                    <button
-                        class="pivx-button-small"
-                        :disabled="busyOperation"
-                        @click="selectTab('send')"
-                    >
-                        {{ translation.pqSend }}
+                <div class="pqHeroBalance">
+                    <span class="pqEyebrow">{{ translation.pqTotalBalance }}</span>
+                    <p class="pqBalance">{{ formatSats(totalBalance) }} <span>{{ ticker }}</span></p>
+                    <span class="pqLocalKeys"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> {{ translation.pqLocalKeys }}</span>
+                </div>
+                <div class="pqBalanceBreakdown">
+                    <div><span>{{ translation.pqConfirmed }}</span><strong data-testid="pq-confirmed-balance">{{ formatSats(confirmedBalance) }} {{ ticker }}</strong></div>
+                    <div><span>{{ translation.pqPending }}</span><strong data-testid="pq-pending-balance">{{ formatSats(pendingBalance) }} {{ ticker }}</strong></div>
+                    <div><span>{{ translation.pqReservedCollateral }}</span><strong data-testid="pq-collateral-balance">{{ formatSats(collateralBalance) }} {{ ticker }}</strong></div>
+                </div>
+                <div class="pqDashboardActions">
+                    <button v-for="action in QUICK_ACTIONS" :key="action.id"
+                        class="pqQuickAction" :data-testid="`pq-action-${action.id}`"
+                        :disabled="busyOperation || masternodeBusy" @click="selectTab(action.id, true)">
+                        <i class="fa-solid" :class="action.icon" aria-hidden="true"></i>
+                        <span>{{ translation[action.labelKey] }}</span>
                     </button>
                 </div>
-                <p class="pqInfo">
+                <p class="pqInfo pqWalletTechnical">
                     {{
                         tr(translation.pqWalletStats, [
                             { keys: addresses.length },
@@ -1948,17 +2055,60 @@ onBeforeUnmount(() => {
                 <p v-if="error" class="pqError">{{ error }}</p>
             </div>
 
-            <div class="pqTabs">
+            <nav ref="walletNavigation" class="pqTabs" :aria-label="translation.pqWalletNavigation">
                 <button
                     v-for="tab in TABS"
                     :key="tab.id"
                     class="pqTab"
                     :class="{ active: activeTab === tab.id }"
+                    :aria-current="activeTab === tab.id ? 'page' : undefined"
                     @click="selectTab(tab.id)"
                 >
                     {{ translation[tab.labelKey] }}
                 </button>
-            </div>
+            </nav>
+
+            <section v-if="activeTab === 'overview'" class="pqOverviewGrid">
+                <div class="pqPanel pqOverviewReceive">
+                    <div class="pqPanelHeader"><h4 class="pqTopConfigured">{{ translation.pqReceive }}</h4><i class="fa-solid fa-qrcode" aria-hidden="true"></i></div>
+                    <p class="pqInfo">{{ translation.pqOverviewReceiveInfo }}</p>
+                    <code class="pqReceiveAddress">{{ receiveAddress }}</code>
+                    <div class="pqRow">
+                        <button class="pqCopyBtn" :disabled="!receiveAddress" @click="copyText(receiveAddress)">{{ translation.pqCopyAddress }}</button>
+                        <button class="pqTextButton" @click="selectTab('receive')">{{ translation.pqShowQR }} <span aria-hidden="true">→</span></button>
+                    </div>
+                </div>
+                <div class="pqPanel pqOverviewSecurity">
+                    <div class="pqPanelHeader"><h4 class="pqTopConfigured">{{ translation.pqWalletSecurity }}</h4><i class="fa-solid fa-shield-halved" aria-hidden="true"></i></div>
+                    <p class="pqInfo">{{ translation.pqSecuritySummary }}</p>
+                    <button class="pqCopyBtn" @click="selectTab('backup')">{{ translation.pqManageBackup }}</button>
+                </div>
+            </section>
+
+            <section v-if="activeTab === 'staking'" class="pqPanel pqStakingPanel">
+                <div class="pqPanelHeader">
+                    <div class="pqWalletIdentity"><i class="fa-solid fa-seedling pqStakeIcon" aria-hidden="true"></i><div><h4 class="pqTopConfigured">{{ translation.pqBrowserStaking }}</h4><span>{{ translation.pqLocalKeys }}</span></div></div>
+                    <span class="pqNetworkBadge" data-testid="pq-staking-status" role="status">{{ stakingStatusLabel }}</span>
+                </div>
+                <p class="pqInfo">{{ translation.pqStakingSessionInfo }}</p>
+                <div class="pqStakingRequirements">
+                    <div><i class="fa-solid fa-window-maximize" aria-hidden="true"></i><strong>{{ translation.pqKeepOpen }}</strong><span>{{ translation.pqKeepOpenInfo }}</span></div>
+                    <div><i class="fa-solid fa-key" aria-hidden="true"></i><strong>{{ translation.pqKeepUnlocked }}</strong><span>{{ translation.pqKeepUnlockedInfo }}</span></div>
+                    <div><i class="fa-solid fa-wifi" aria-hidden="true"></i><strong>{{ translation.pqKeepConnected }}</strong><span>{{ translation.pqKeepConnectedInfo }}</span></div>
+                </div>
+                <div class="pqStakingNotice">
+                    <strong>{{ translation.pqStakingEligibility }}</strong>
+                    <p>{{ staking.eligible === null ? translation.pqStakingNotChecked : `${staking.eligible} / ${staking.checked}` }}</p>
+                    <p>{{ translation.pqStakingEligibilityInfo }}</p>
+                </div>
+                <p v-if="staking.error" class="pqError" role="alert">{{ staking.error }}</p>
+                <p v-if="!stakingReady && !stakingChecking" class="pqInfo">{{ translation.pqStakingServiceUnavailable }}</p>
+                <button v-if="staking.active" class="pivx-button-big" data-testid="pq-stop-staking" @click="stakingSession.stop()">{{ translation.pqStopStaking }}</button>
+                <button v-else class="pivx-button-big" data-testid="pq-start-staking" :disabled="!stakingReady || stakingChecking || busyOperation || masternodeBusy" @click="startStaking">{{ stakingChecking ? translation.pqStakingChecking : translation.pqStartStaking }}</button>
+                <p class="pqInfo">{{ translation.pqStakingStopInfo }}</p>
+                <p v-if="staking.lastBlock" class="pqInfo">{{ translation.pqStakingLastBlock }} <code class="pqAddress">{{ staking.lastBlock }}</code></p>
+                <button class="pqCopyBtn" @click="selectTab('activity')">{{ translation.pqViewActivity }}</button>
+            </section>
 
             <!-- Receive -->
             <div
@@ -2093,11 +2243,12 @@ onBeforeUnmount(() => {
 
             <!-- Activity -->
             <div
-                v-if="activeTab === 'activity'"
+                v-if="activeTab === 'activity' || activeTab === 'overview' || activeTab === 'staking'"
                 class="dcWallet-activity pqPanel"
             >
                 <div class="pqPanelHeader">
-                    <h4 class="pqTopConfigured">{{ translation.pqActivity }}</h4>
+                    <h4 class="pqTopConfigured">{{ activeTab === 'overview' ? translation.pqRecentActivity : activeTab === 'staking' ? translation.pqStakingRewards : translation.pqActivity }}</h4>
+                    <button v-if="activeTab === 'overview' && activity.length > 5" class="pqTextButton" @click="selectTab('activity')">{{ translation.pqViewAll }}</button>
                     <button
                         class="pqCopyBtn"
                         :disabled="activityLoading"
@@ -2113,7 +2264,8 @@ onBeforeUnmount(() => {
                 <p v-if="activityError" class="pqError">
                     {{ activityError }}
                 </p>
-                <div v-else-if="activity.length" class="scrollTable">
+                <p v-if="activeTab === 'staking'" class="pqInfo">{{ translation.pqStakingRewardsInfo }}</p>
+                <div v-if="!activityError && displayedActivity.length" class="scrollTable">
                     <table
                         class="table table-responsive table-sm stakingTx masternodeTable table-mobile-scroll"
                     >
@@ -2128,7 +2280,7 @@ onBeforeUnmount(() => {
                         </thead>
                         <tbody>
                             <tr
-                                v-for="tx in activity"
+                                v-for="tx in displayedActivity"
                                 :key="tx.txid"
                                 :class="activityRowClass(tx)"
                             >
@@ -2171,7 +2323,7 @@ onBeforeUnmount(() => {
                     {{
                         activityLoading
                             ? translation.pqLoadingTransactions
-                            : translation.pqNoTransactions
+                            : activeTab === 'staking' ? translation.pqNoStakingRewards : translation.pqNoTransactions
                     }}
                 </p>
             </div>
@@ -2186,9 +2338,6 @@ onBeforeUnmount(() => {
                 </div>
                 <p class="pqInfo">
                     Owner and collateral private keys stay in this browser. Registration proofs and collateral withdrawals are signed locally; the server only supplies public chain data and broadcasts signed transactions.
-                </p>
-                <p class="pqWarning">
-                    Browser staking is intentionally unavailable: current PQ staking requires a continuously online signing wallet. Enabling it here would require handing spending keys to a server.
                 </p>
                 <p class="pqInfo">
                     Testnet height: {{ chainHeight ?? 'unavailable' }} · PQ masternodes activate at height 3000.
@@ -2458,6 +2607,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+:global(.pqAppShell) {
+    padding-top: 28px;
+}
+
+.title-section {
+    padding: 0 !important;
+    margin-bottom: 0;
+}
+
 .pqPanel {
     margin-top: 22px;
     padding: 18px 20px;
@@ -2649,11 +2807,163 @@ onBeforeUnmount(() => {
 }
 
 .pqDashboardActions {
-    margin: 6px 0 12px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin: 24px 0 8px;
 }
 
-.pqDashboardActions .pivx-button-small {
-    min-width: 130px;
+.pqWalletHero {
+    padding: 26px 30px 16px;
+    background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--theme-accent) 15%, transparent), transparent 70%), var(--theme-surface);
+    border-top: 3px solid var(--theme-accent);
+    box-shadow: 0 12px 36px #0000000d;
+}
+
+.pqWalletIdentity {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.pqWalletIdentity strong {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 1rem;
+}
+
+.pqWalletIdentity span {
+    display: block;
+    color: var(--theme-text-muted);
+    font-size: 0.78rem;
+    margin-top: 3px;
+}
+
+.pqNetworkBadge {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    border: 1px solid var(--theme-border);
+    border-radius: 20px;
+    background: var(--theme-surface-2);
+    color: var(--theme-text);
+    text-transform: capitalize;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.pqHeroBalance {
+    padding: 22px 0 26px;
+    text-align: center;
+}
+
+.pqEyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.13em;
+    font-size: 0.75rem;
+    color: var(--theme-text-muted);
+}
+
+.pqHeroBalance .pqBalance {
+    font-family: 'Montserrat', sans-serif;
+    font-size: clamp(2rem, 5vw, 3.5rem);
+    font-weight: 700;
+    margin: 6px 0 8px;
+    line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+}
+
+.pqHeroBalance .pqBalance span {
+    font-size: 0.42em;
+    font-weight: 500;
+    color: var(--theme-text-muted);
+}
+
+.pqLocalKeys {
+    color: var(--theme-text-muted);
+    font-size: 0.8rem;
+}
+
+.pqLocalKeys i { margin-right: 5px; }
+
+.pqBalanceBreakdown {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border: 1px solid var(--theme-border);
+    border-radius: 12px;
+    background: var(--theme-surface);
+}
+
+.pqBalanceBreakdown > div {
+    padding: 16px 12px;
+    text-align: center;
+    min-width: 0;
+}
+
+.pqBalanceBreakdown > div + div { border-left: 1px solid var(--theme-border); }
+.pqBalanceBreakdown span { display: block; color: var(--theme-text-muted); font-size: 0.75rem; margin-bottom: 7px; }
+.pqBalanceBreakdown strong { font-size: 1rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+.pqQuickAction {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 102px;
+    padding: 16px 8px;
+    border: 1px solid var(--theme-button-border);
+    border-radius: 12px;
+    background: var(--theme-button-bg);
+    color: var(--theme-button-text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 150ms ease, background 150ms ease;
+}
+
+.pqQuickAction i { font-size: 1.45rem; }
+.pqQuickAction span { color: var(--theme-button-text) !important; }
+.pqQuickAction:hover:not(:disabled) { transform: translateY(-2px); background: var(--theme-button-bg-hover, var(--theme-button-bg)); }
+.pqQuickAction:disabled { opacity: 0.5; cursor: wait; }
+.pqQuickAction:focus-visible, .pqTextButton:focus-visible { outline: 3px solid var(--theme-accent); outline-offset: 3px; }
+.pqWalletTechnical { margin: 14px 0 0; text-align: center; font-size: 0.72rem; }
+
+.pqOverviewGrid {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr;
+    gap: 20px;
+}
+
+.pqOverviewGrid > div { min-width: 0; }
+.pqOverviewGrid h4, .pqStakingPanel h4 { font-size: 1.05rem; }
+.pqOverviewGrid .pqInfo { font-size: 0.86rem; line-height: 1.6; }
+.pqOverviewGrid .pqReceiveAddress { font-size: 0.75rem; line-height: 1.6; }
+.pqTextButton { border: 0; padding: 6px 0; background: transparent; color: var(--theme-text); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.pqStakeIcon { font-size: 2rem; color: var(--theme-text); }
+
+.pqStakingRequirements { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin: 24px 0; }
+.pqStakingRequirements > div { padding: 20px; background: var(--theme-surface-2); border-radius: 12px; }
+.pqStakingRequirements i { display: block; font-size: 1.3rem; margin-bottom: 16px; }
+.pqStakingRequirements strong { display: block; margin-bottom: 8px; }
+.pqStakingRequirements span { font-size: 0.85rem; line-height: 1.6; color: var(--theme-text-muted); }
+.pqStakingNotice { border-left: 3px solid var(--theme-accent); padding: 12px 18px; margin: 20px 0; background: var(--theme-surface-2); border-radius: 0 8px 8px 0; }
+.pqStakingNotice p { margin: 8px 0 0; font-size: 0.9rem; line-height: 1.6; }
+
+@media (max-width: 640px) {
+    .pqWalletHero { padding: 20px 14px 14px; }
+    .pqDashboardActions { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .pqOverviewGrid, .pqStakingRequirements { grid-template-columns: 1fr; gap: 0; }
+    .pqStakingRequirements { gap: 10px; }
+    .pqBalanceBreakdown { grid-template-columns: 1fr; }
+    .pqBalanceBreakdown > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; padding: 12px; }
+    .pqBalanceBreakdown > div + div { border-left: 0; border-top: 1px solid var(--theme-border); }
+    .pqBalanceBreakdown span { margin: 0; max-width: 55%; }
+    .pqBalanceBreakdown strong { font-size: 0.9rem; text-align: right; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pqQuickAction { transition: none; }
+    .pqQuickAction:hover:not(:disabled) { transform: none; }
 }
 
 .pqRow .pqSendAddress {
@@ -2700,20 +3010,22 @@ onBeforeUnmount(() => {
     gap: 8px;
     margin-top: 22px;
     flex-wrap: wrap;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--theme-border);
 }
 
 .pqTab {
     border: 1px solid var(--theme-button-border);
-    background: var(--theme-button-bg);
-    color: var(--theme-button-text);
+    background: var(--theme-surface);
+    color: var(--theme-text);
     border-radius: 8px;
     padding: 8px 18px;
     cursor: pointer;
 }
 
 .pqTab.active {
-    background: var(--theme-button-bg-active, #3d5afe);
-    color: #ffffff;
+    background: var(--theme-button-bg);
+    color: var(--theme-button-text);
     font-weight: 600;
 }
 

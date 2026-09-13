@@ -50,20 +50,46 @@ function assertTxid(txid) {
  * @param {string} url
  * @param {RequestInit} [options]
  * @param {number} [ms]
- * @returns {Promise<Response>}
+ * @param {function(Response): Promise<unknown>} [consume] Keep the deadline active through body consumption.
+ * @returns {Promise<unknown>}
  */
 export async function fetchWithTimeout(
     url,
     options = {},
-    ms = PQ_FETCH_TIMEOUT_MS
+    ms = PQ_FETCH_TIMEOUT_MS,
+    consume = (response) => response
 ) {
     const controller = new AbortController();
+    const abort = () => controller.abort();
+    if (options.signal?.aborted) controller.abort();
+    options.signal?.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(() => controller.abort(), ms);
     try {
-        return await fetch(url, { ...options, signal: controller.signal });
+        return await consume(await fetch(url, { ...options, signal: controller.signal }));
     } finally {
         clearTimeout(timer);
+        options.signal?.removeEventListener('abort', abort);
     }
+}
+
+function fetchJsonWithTimeout(url, options, fallback) {
+    return fetchWithTimeout(url, options, PQ_FETCH_TIMEOUT_MS, async (response) => {
+        if (!response.ok) throw await responseError(response, fallback);
+        return responseJson(response, fallback);
+    });
+}
+
+async function stakingRequest(path, { signal, body } = {}) {
+    return fetchJsonWithTimeout(`${bridgeBase()}/staking/${path}`, {
+        signal,
+        ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+    }, 'Browser staking service is unavailable');
+}
+export const fetchStakingStatus = (signal) => stakingRequest('status', { signal });
+export const prepareStake = (outpoints, signal) => stakingRequest('prepare', { signal, body: { outpoints } });
+export const submitStake = (block, signal) => stakingRequest('submit', { signal, body: { block } });
+export async function fetchBestBlockHash(signal) {
+    return assertTxid(await fetchJsonWithTimeout(`${bridgeBase()}/getbestblockhash`, { signal }, 'Failed to fetch chain tip'));
 }
 
 /**
@@ -134,14 +160,9 @@ async function responseJson(response, fallback) {
  * @param {string} address
  * @returns {Promise<Array<{txid: string, vout: number, valueSats: bigint, confirmations: number, address: string}>>}
  */
-export async function fetchUTXOs(address) {
+export async function fetchUTXOs(address, signal) {
     const encodedAddress = encodePQAddress(address);
-    const response = await fetchWithTimeout(
-        `${explorerBase()}/api/v2/utxo/${encodedAddress}`
-    );
-    if (!response.ok)
-        throw await responseError(response, 'Failed to fetch UTXOs');
-    const utxos = await responseJson(response, 'Failed to fetch UTXOs');
+    const utxos = await fetchJsonWithTimeout(`${explorerBase()}/api/v2/utxo/${encodedAddress}`, { signal }, 'Failed to fetch UTXOs');
     if (!Array.isArray(utxos)) throw new Error('Unexpected UTXO response');
     return utxos.map((utxo) => ({
         txid: utxo.txid,
@@ -206,17 +227,10 @@ export async function fetchMinRelayFee() {
     }
 }
 
-export async function fetchMasternodes() {
-    const response = await fetchWithTimeout(
-        `${bridgeBase()}/listpqmasternodes`
-    );
-    if (!response.ok)
-        throw await responseError(response, 'Failed to fetch PQ masternodes');
-    const result = await responseJson(
-        response,
-        'Failed to fetch PQ masternodes'
-    );
-    return Array.isArray(result) ? result : [];
+export async function fetchMasternodes(signal) {
+    const result = await fetchJsonWithTimeout(`${bridgeBase()}/listpqmasternodes`, { signal }, 'Failed to fetch PQ masternodes');
+    if (!Array.isArray(result)) throw new Error('Unexpected masternode registry response');
+    return result;
 }
 
 export async function fetchBlockCount() {

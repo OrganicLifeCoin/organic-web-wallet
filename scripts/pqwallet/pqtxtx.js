@@ -313,7 +313,7 @@ export function serializeTransfer({
     if (
         !Array.isArray(outputs) ||
         outputs.length < 1 ||
-        outputs.length > PQ_MAX_OUTPUTS
+        outputs.length > (mode === PQ_STAKE_MODE ? 3 : PQ_MAX_OUTPUTS)
     ) {
         throw new Error(`PQ transfer requires 1 to ${PQ_MAX_OUTPUTS} outputs`);
     }
@@ -386,7 +386,7 @@ export function parsePayload(payloadBytes) {
     return { version, mode, authorizations, data, hex: payloadBytes };
 }
 
-export function parseTransfer(raw) {
+function parsePQTransaction(raw, allowedModes) {
     const bytes = raw instanceof Uint8Array ? raw : hexToBytes(raw);
     if (bytes.length > PQ_MAX_TX_BYTES)
         throw new Error(`PQ transaction exceeds ${PQ_MAX_TX_BYTES} bytes`);
@@ -410,7 +410,7 @@ export function parseTransfer(raw) {
         inputs.push({ txid: bytesToHex(txid), vout, sequence, scriptSig });
     }
     const outputCount = reader.readCount();
-    if (outputCount < 1 || outputCount > PQ_MAX_OUTPUTS)
+    if (outputCount < 1 || outputCount > 3)
         throw new Error('invalid PQ output count');
     const outputs = [];
     for (let i = 0; i < outputCount; i += 1) {
@@ -431,8 +431,10 @@ export function parseTransfer(raw) {
     if (reader.offset !== bytes.length)
         throw new Error('trailing bytes after transaction');
     const payload = parsePayload(payloadBytes);
-    if (payload.mode !== PQ_TRANSFER_MODE && payload.mode !== PQ_MASTERNODE_MODE)
+    if (!allowedModes.includes(payload.mode))
         throw new Error(`unsupported PQ mode: ${payload.mode}`);
+    if (payload.mode !== PQ_STAKE_MODE && outputCount > PQ_MAX_OUTPUTS)
+        throw new Error('invalid PQ output count');
     if (payload.authorizations.length !== inputs.length) {
         throw new Error('PQ authorization count does not match input count');
     }
@@ -441,4 +443,19 @@ export function parseTransfer(raw) {
         input.signature = payload.authorizations[index].signature;
     });
     return { version, type, inputs, outputs, locktime, payload, raw: bytes };
+}
+
+export function parseTransfer(raw) {
+    return parsePQTransaction(raw, [PQ_TRANSFER_MODE, PQ_MASTERNODE_MODE]);
+}
+
+export function parseCoinstake(raw) {
+    const tx = parsePQTransaction(raw, [PQ_STAKE_MODE]);
+    if (tx.inputs.length !== 1 || tx.outputs.length < 2 ||
+        tx.outputs[0].value !== 0n || tx.outputs[0].script.length !== 0 ||
+        tx.inputs[0].scriptSig.length !== 0 || tx.locktime !== 0 ||
+        tx.inputs[0].sequence !== 0xffffffff) {
+        throw new Error('invalid PQ coinstake structure');
+    }
+    return tx;
 }
